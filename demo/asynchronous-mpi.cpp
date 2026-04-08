@@ -1,13 +1,3 @@
-/*Rank 0: master (quản lý elite pool)
-
-Rank ≥1: worker (chạy tabu search)
-
-Workers gửi best solution lên master bằng MPI_Isend
-
-Workers không chờ nhau (asynchronous)
-
-Master nhận solution bằng MPI_Iprobe*/
-
 #include <mpi.h>
 #include <iostream>
 #include <vector>
@@ -18,6 +8,7 @@ Master nhận solution bằng MPI_Iprobe*/
 const int SOL_SIZE = 20;
 const int TAG_SOLUTION = 1;
 const int TAG_ELITE = 2;
+const int TAG_DONE = 3;
 
 /* ---------- fake objective ---------- */
 int evaluate(const std::vector<int>& sol){
@@ -45,23 +36,25 @@ void run_worker(int rank){
 
     std::vector<int> sol = random_solution();
     int best_cost = evaluate(sol);
-
     std::vector<int> best_sol = sol;
 
-    MPI_Request req;
+    MPI_Request req = MPI_REQUEST_NULL;
 
     for(int iter=0; iter<100000; iter++){
 
-        /* simple neighborhood */
         random_move(sol);
-
         int cost = evaluate(sol);
 
         if(cost < best_cost){
             best_cost = cost;
             best_sol = sol;
 
-            /* send solution to master */
+            // (Good practice) avoid overwriting an in-flight request
+            if(req != MPI_REQUEST_NULL){
+                MPI_Wait(&req, MPI_STATUS_IGNORE);
+                req = MPI_REQUEST_NULL;
+            }
+
             MPI_Isend(best_sol.data(),
                       SOL_SIZE,
                       MPI_INT,
@@ -71,12 +64,11 @@ void run_worker(int rank){
                       &req);
         }
 
-        /* check elite solutions from master */
-        int flag;
+        // Check elite solutions from master (asynchronous probe)
+        int flag = 0;
         MPI_Status status;
 
         MPI_Iprobe(0, TAG_ELITE, MPI_COMM_WORLD, &flag, &status);
-
         if(flag){
             std::vector<int> elite(SOL_SIZE);
 
@@ -89,7 +81,6 @@ void run_worker(int rank){
                      &status);
 
             int elite_cost = evaluate(elite);
-
             if(elite_cost < best_cost){
                 sol = elite;
                 best_sol = elite;
@@ -98,30 +89,50 @@ void run_worker(int rank){
         }
     }
 
+    // Ensure last Isend (if any) completed before finishing
+    if(req != MPI_REQUEST_NULL){
+        MPI_Wait(&req, MPI_STATUS_IGNORE);
+        req = MPI_REQUEST_NULL;
+    }
+
     std::cout << "Worker " << rank
               << " best cost = " << best_cost
               << std::endl;
+
+    // Notify master that this worker is done
+    int done = 1;
+    MPI_Send(&done, 1, MPI_INT, 0, TAG_DONE, MPI_COMM_WORLD);
 }
 
 /* ---------- master process ---------- */
 void run_master(int world_size){
 
     std::vector<int> elite(SOL_SIZE, 999999);
-
     int elite_cost = 999999999;
+
+    int done_count = 0;
+    const int num_workers = world_size - 1;
 
     MPI_Status status;
 
-    while(true){
+    while(done_count < num_workers){
 
-        int flag;
+        int flag = 0;
 
-        MPI_Iprobe(MPI_ANY_SOURCE,
-                   TAG_SOLUTION,
-                   MPI_COMM_WORLD,
-                   &flag,
-                   &status);
+        // 1) Check DONE messages first (so we can exit)
+        MPI_Iprobe(MPI_ANY_SOURCE, TAG_DONE, MPI_COMM_WORLD, &flag, &status);
+        if(flag){
+            int dummy;
+            MPI_Recv(&dummy, 1, MPI_INT, status.MPI_SOURCE, TAG_DONE, MPI_COMM_WORLD, &status);
+            done_count++;
+            std::cout << "Master: received DONE from worker " << status.MPI_SOURCE
+                      << " (" << done_count << "/" << num_workers << ")"
+                      << std::endl;
+            continue;
+        }
 
+        // 2) Check improved solutions
+        MPI_Iprobe(MPI_ANY_SOURCE, TAG_SOLUTION, MPI_COMM_WORLD, &flag, &status);
         if(flag){
 
             std::vector<int> sol(SOL_SIZE);
@@ -144,9 +155,8 @@ void run_master(int world_size){
                           << elite_cost
                           << std::endl;
 
-                /* broadcast elite solution */
+                // Broadcast elite solution (blocking is OK for demo, but Isend is safer)
                 for(int w=1; w<world_size; w++){
-
                     MPI_Send(elite.data(),
                              SOL_SIZE,
                              MPI_INT,
@@ -156,16 +166,21 @@ void run_master(int world_size){
                 }
             }
         }
+
+        // Optional: prevent busy-spin from pegging CPU at 100%
+        // You can remove this if you prefer.
+        // MPI_Barrier is NOT needed; just a tiny sleep would be fine too.
+        // (No standard sleep in MPI; in C++ you could use std::this_thread::sleep_for)
     }
+
+    std::cout << "Master: all workers finished. Exiting master loop." << std::endl;
 }
 
 int main(int argc, char** argv){
 
     MPI_Init(&argc,&argv);
 
-    int rank;
-    int size;
-
+    int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD,&rank);
     MPI_Comm_size(MPI_COMM_WORLD,&size);
 
@@ -177,6 +192,5 @@ int main(int argc, char** argv){
         run_worker(rank);
 
     MPI_Finalize();
-
     return 0;
 }
