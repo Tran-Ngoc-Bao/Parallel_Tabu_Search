@@ -91,7 +91,7 @@ public:
     std::shared_ptr<Derived> route_pop() const {
         const auto& custs = data().customers;
         auto nc = custs;
-        nc.erase(nc.begin() + static_cast<ptrdiff_t>(nc.size()) - 2);
+        nc.erase(nc.end() - 2);
         return RouteHelper<Derived>::make(std::move(nc));
     }
 

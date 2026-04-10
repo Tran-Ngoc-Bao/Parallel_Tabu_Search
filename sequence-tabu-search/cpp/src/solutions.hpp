@@ -16,6 +16,9 @@ namespace penalty {
     void update(int i, double violation);
 }
 
+// Forward declare Logger (defined in logger.hpp)
+struct Logger;
+
 // -----------------------------------------------------------------------
 // Solution
 // -----------------------------------------------------------------------
@@ -51,12 +54,9 @@ struct Solution {
     Solution destroy_and_repair(const std::vector<std::vector<double>>& edge_records) const;
 
     // Main tabu search loop
-    static Solution tabu_search(Solution root, struct Logger& logger);
+    static Solution tabu_search(Solution root, Logger& logger);
 
     // JSON serialization
     nlohmann::json to_json() const;
     static Solution from_json(const nlohmann::json& j);
 };
-
-// Forward declare Logger
-struct Logger;
