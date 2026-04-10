@@ -1,3 +1,0 @@
-demo/*.cpp linguist-language=C++
-demo/*.cpp -linguist-vendored
-demo/*.cpp -linguist-generated
