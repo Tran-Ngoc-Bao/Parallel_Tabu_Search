@@ -1,3 +1,7 @@
+.vscode/
+
 sequence-tabu-search/cpp/build/
 sequence-tabu-search/cpp/outputs/
-.vscode/
+
+demo/asynchronous-mpi_openmp
+demo/asynchronous-mpi

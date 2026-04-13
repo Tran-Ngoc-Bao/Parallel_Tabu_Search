@@ -1,0 +1,17 @@
+I. 11/04/2026
+    1. MPI
+        - Chia worker: Mỗi worker chạy 1 thứ tự neihborhood riêng (1-2-3-4-5-6, 6-5-4-3-2-1, ...)
+            (Thời gian chạy mỗi neihborhood chênh lệch nhiều -> OpenMP không song song được để chọn neihborhood tốt nhất cho mỗi lần lặp)
+            -> Không cần tính điểm cho neihborhood sau mỗi lần lặp
+        - Trao đổi: Mỗi worker tự pull lên master để lấy elite solution
+            + Sau bao nhiêu lần lặp ? Sau bao nhiêu lần elite solution cục bộ không thay đổi nhiều ?
+            + Lấy elite solution ngẫu nhiên không phải chính worker đó gửi lên
+        - Elite pool:
+            + Số lượng phần tử trong elite pool ?
+            + Loại phần tử khi elite pool đầy
+                -> Loại phần tử có sai khác ít nhất so với elite solution worker gửi lên (Lưu solution dưới dạng: khách hàng ii của truck/drone i lưu khách hàng ii+1)
+                -> Loại phần tử trong elite pool ? Loại phần tử worker gửi lên ?
+        - Thuật toán dừng khi nào ?
+    2. OpenMP
+        - Song song để chọn cách move tốt nhất cho lần lặp hiện tại
+            (Lặp tất cả khách hàng trên tất cả các truck/drone để chọn cách move tốt nhất)
