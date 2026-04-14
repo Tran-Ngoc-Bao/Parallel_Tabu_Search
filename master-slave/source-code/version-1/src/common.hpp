@@ -1,7 +1,7 @@
 #pragma once
 #include <iostream>
 #include <vector>
-#include <utility>
+#include <map>
 #include <mpi.h>
 #include <omp.h>
 
@@ -11,7 +11,7 @@ inline constexpr int TAG_ELITE_WORKER_SEND_2_MASTER = 1;
 inline constexpr int TAG_ELITE_MASTER_SEND_2_WORKER = 2;
 
 struct Trip {
-    std::vector<std::pair<int, int>> customers; // <customer, next customer (-1: last customer)>
+    std::map<int, int> customers; // customers[cus] = next customer (-1: last customer)
 };
 
 struct EliteElement {

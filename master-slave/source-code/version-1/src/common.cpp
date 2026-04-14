@@ -21,9 +21,9 @@ std::vector<int> pack_elite(const Elite &e) {
         pack_int(buf, (int) el.trips.size());
         for (const auto &tr : el.trips) {
             pack_int(buf, (int) tr.customers.size());
-            for (const auto &pr : tr.customers) {
-                pack_int(buf, pr.first);
-                pack_int(buf, pr.second);
+            for (const auto &[cus, nxt] : tr.customers) {
+                pack_int(buf, cus);
+                pack_int(buf, nxt);
             }
         }
     }
@@ -50,12 +50,11 @@ Elite unpack_elite(const std::vector<int> &buf) {
             auto &tr = el.trips[ti];
 
             int customers_count = unpack_int(buf, i);
-            tr.customers.resize(customers_count);
 
             for (int ci = 0; ci < customers_count; ++ci) {
-                int c = unpack_int(buf, i);
+                int cus = unpack_int(buf, i);
                 int nxt = unpack_int(buf, i);
-                tr.customers[ci] = {c, nxt};
+                tr.customers[cus] = nxt;
             }
         }
     }
