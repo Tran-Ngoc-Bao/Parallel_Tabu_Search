@@ -9,6 +9,7 @@ find_package(OpenMP REQUIRED)
 
 add_executable(master_slave_v1
     src/main.cpp
+    src/common.cpp
     src/input.cpp
     src/master.cpp
     src/worker.cpp
