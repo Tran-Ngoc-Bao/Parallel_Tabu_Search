@@ -42,7 +42,14 @@ void push_elite(const Elite &e, int &elite_pool_count, std::vector<Elite> &elite
     }
 }
 
-void master(int size) {
+void master(int size, const ProblemInput &problem_input) {
+    (void) size;
+
+    std::cout << "Loaded dataset: " << problem_input.file_path
+              << " (customers=" << problem_input.customers_count
+              << ", trucks=" << problem_input.trucks_count
+              << ", drones=" << problem_input.drones_count << ")\n";
+
     int elite_pool_count = 0;
     std::vector<Elite> elite_pool(ELITE_POOL_SIZE);
 
