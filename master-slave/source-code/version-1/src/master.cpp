@@ -42,6 +42,10 @@ void push_elite(const Elite &e, int &elite_pool_count, std::vector<Elite> &elite
     }
 }
 
+void pull_elite(Elite &e, int worker_id) {
+    
+}
+
 void master(int size, const ProblemInput &problem_input) {
     (void) size;
 
