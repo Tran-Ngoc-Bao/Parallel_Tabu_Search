@@ -1,130 +1,108 @@
 #include "input.hpp"
 
-#include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <regex>
-#include <stdexcept>
+void input(int argc, char** argv) {
+    CLI::App app{"Tabu Search for VRP with Drones"};
+    app.require_subcommand(1);
 
-namespace {
+    cli::Arguments args;
 
-std::string read_file(const std::string &path) {
-    std::ifstream f(path);
-    if (!f) {
-        throw std::runtime_error("Cannot open file: " + path);
-    }
-    return std::string((std::istreambuf_iterator<char>(f)),
-                       std::istreambuf_iterator<char>());
-}
+    // ---- run subcommand ----
+    auto* run_cmd = app.add_subcommand("run", "Run tabu search");
+    run_cmd->add_option("problem", args.run.problem, "Problem file path")->required();
+    run_cmd->add_option("--truck-cfg",  args.run.truck_cfg);
+    run_cmd->add_option("--drone-cfg",  args.run.drone_cfg);
 
-std::string resolve_problem_file(const std::string &dataset_name,
-                                 const std::string &base_data_dir) {
-    namespace fs = std::filesystem;
+    // EnergyModel
+    std::map<std::string, cli::EnergyModel> em_map{
+        {"linear", cli::EnergyModel::Linear},
+        {"non-linear", cli::EnergyModel::NonLinear},
+        {"endurance", cli::EnergyModel::Endurance},
+        {"unlimited", cli::EnergyModel::Unlimited}
+    };
+    run_cmd->add_option("-c,--config", args.run.config)->transform(
+        CLI::CheckedTransformer(em_map, CLI::ignore_case));
 
-    fs::path dataset_path(dataset_name);
-    if (dataset_path.is_absolute() && fs::exists(dataset_path)) {
-        return dataset_path.string();
-    }
-    if (fs::exists(dataset_path)) {
-        return fs::absolute(dataset_path).string();
-    }
+    run_cmd->add_option("--tabu-size-factor",          args.run.tabu_size_factor);
+    run_cmd->add_option("--adaptive-iterations",       args.run.adaptive_iterations);
+    run_cmd->add_flag  ("--adaptive-fixed-iterations", args.run.adaptive_fixed_iterations);
+    run_cmd->add_option("--adaptive-segments",         args.run.adaptive_segments);
+    run_cmd->add_flag  ("--adaptive-fixed-segments",   args.run.adaptive_fixed_segments);
+    run_cmd->add_option("--ejection-chain-iterations", args.run.ejection_chain_iterations);
+    run_cmd->add_option("--destroy-rate",              args.run.destroy_rate);
 
-    const fs::path data_dir(resolve_data_dir(base_data_dir));
-    fs::path candidate = data_dir / dataset_name;
-    if (fs::exists(candidate)) {
-        return candidate.string();
-    }
+    std::map<std::string, cli::ConfigType> ct_map{
+        {"low", cli::ConfigType::Low}, {"high", cli::ConfigType::High}
+    };
+    run_cmd->add_option("--speed-type", args.run.speed_type)->transform(
+        CLI::CheckedTransformer(ct_map, CLI::ignore_case));
+    run_cmd->add_option("--range-type", args.run.range_type)->transform(
+        CLI::CheckedTransformer(ct_map, CLI::ignore_case));
 
-    if (dataset_name.size() < 4 || dataset_name.substr(dataset_name.size() - 4) != ".txt") {
-        fs::path txt_candidate = data_dir / (dataset_name + ".txt");
-        if (fs::exists(txt_candidate)) {
-            return txt_candidate.string();
-        }
-    }
+    std::map<std::string, cli::DistanceType> dt_map{
+        {"manhattan", cli::DistanceType::Manhattan},
+        {"euclidean", cli::DistanceType::Euclidean}
+    };
+    run_cmd->add_option("--truck-distance", args.run.truck_distance)->transform(
+        CLI::CheckedTransformer(dt_map, CLI::ignore_case));
+    run_cmd->add_option("--drone-distance", args.run.drone_distance)->transform(
+        CLI::CheckedTransformer(dt_map, CLI::ignore_case));
 
-    throw std::runtime_error("Cannot find dataset: " + dataset_name);
-}
+    std::optional<size_t> trucks_count_cli, drones_count_cli;
+    run_cmd->add_option("--trucks-count", trucks_count_cli);
+    run_cmd->add_option("--drones-count", drones_count_cli);
 
-} // namespace
+    run_cmd->add_option("--waiting-time-limit",  args.run.waiting_time_limit);
 
-std::string resolve_data_dir(const std::string &base_data_dir) {
-    namespace fs = std::filesystem;
+    std::map<std::string, cli::Strategy> strat_map{
+        {"random", cli::Strategy::Random},
+        {"cyclic", cli::Strategy::Cyclic},
+        {"vns",    cli::Strategy::Vns},
+        {"adaptive", cli::Strategy::Adaptive}
+    };
+    run_cmd->add_option("--strategy", args.run.strategy)->transform(
+        CLI::CheckedTransformer(strat_map, CLI::ignore_case));
 
-    if (!base_data_dir.empty()) {
-        fs::path p(base_data_dir);
-        if (!p.is_absolute()) {
-            p = fs::absolute(p);
-        }
-        return p.string();
-    }
+    std::optional<size_t> fix_iter_cli;
+    run_cmd->add_option("--fix-iteration", fix_iter_cli);
 
-    fs::path current = fs::current_path();
-    for (;;) {
-        fs::path candidate = current / "data";
-        if (fs::exists(candidate) && fs::is_directory(candidate)) {
-            return candidate.string();
-        }
-        if (!current.has_parent_path() || current.parent_path() == current) {
-            break;
-        }
-        current = current.parent_path();
-    }
+    run_cmd->add_option("--reset-after-factor",  args.run.reset_after_factor);
+    run_cmd->add_option("--max-elite-size",       args.run.max_elite_size);
+    run_cmd->add_option("--penalty-exponent",     args.run.penalty_exponent);
+    run_cmd->add_flag  ("--single-truck-route",   args.run.single_truck_route);
+    run_cmd->add_flag  ("--single-drone-route",   args.run.single_drone_route);
+    run_cmd->add_flag  ("-v,--verbose",            args.run.verbose);
+    run_cmd->add_option("--outputs",               args.run.outputs);
+    run_cmd->add_flag  ("--disable-logging",       args.run.disable_logging);
+    run_cmd->add_flag  ("--dry-run",               args.run.dry_run);
+    run_cmd->add_option("--extra",                 args.run.extra);
+    std::optional<uint64_t> seed_cli;
+    run_cmd->add_option("--seed", seed_cli);
 
-    return (fs::current_path() / "data").string();
-}
+    // ---- evaluate subcommand ----
+    auto* eval_cmd = app.add_subcommand("evaluate", "Evaluate a solution");
+    eval_cmd->add_option("solution", args.evaluate.solution, "Solution JSON")->required();
+    eval_cmd->add_option("config",   args.evaluate.config,   "Config JSON")  ->required();
 
-ProblemInput load_problem_input(const std::string &dataset_name,
-                                const std::string &base_data_dir) {
-    ProblemInput input;
-    input.file_path = resolve_problem_file(dataset_name, base_data_dir);
+    CLI11_PARSE(app, argc, argv);
 
-    std::string data = read_file(input.file_path);
-
-    {
-        std::regex re_trucks(R"(trucks_count (\d+))");
-        std::smatch m;
-        if (!std::regex_search(data, m, re_trucks)) {
-            throw std::runtime_error("Missing trucks count");
-        }
-        input.trucks_count = static_cast<std::size_t>(std::stoul(m[1].str()));
-    }
-    {
-        std::regex re_drones(R"(drones_count (\d+))");
-        std::smatch m;
-        if (!std::regex_search(data, m, re_drones)) {
-            throw std::runtime_error("Missing drones count");
-        }
-        input.drones_count = static_cast<std::size_t>(std::stoul(m[1].str()));
+    if (run_cmd->parsed()) {
+        args.cmd = cli::CommandType::Run;
+        if (trucks_count_cli) args.run.trucks_count = trucks_count_cli;
+        if (drones_count_cli) args.run.drones_count = drones_count_cli;
+        if (fix_iter_cli)     args.run.fix_iteration = fix_iter_cli;
+        if (seed_cli)         args.run.seed          = seed_cli;
+    } else {
+        args.cmd = cli::CommandType::Evaluate;
     }
 
-    std::pair<double, double> depot;
-    {
-        std::regex re_depot(R"(depot (-?[\d\.]+)\s+(-?[\d\.]+))");
-        std::smatch m;
-        if (!std::regex_search(data, m, re_depot)) {
-            throw std::runtime_error("Missing depot coordinates");
-        }
-        depot = {std::stod(m[1].str()), std::stod(m[2].str())};
+
+    if (args.cmd == cli::CommandType::Run) {
+        set_global_config(build_config(args.run));
+    } else {
+        // Evaluate
+        set_global_config(build_config_from_json(args.evaluate.config));
+        std::ifstream f(args.evaluate.solution);
+        if (!f) { std::cerr << "Cannot open " << args.evaluate.solution << "\n"; return 1; }
+        nlohmann::json j; f >> j;
     }
-
-    input.x = {depot.first};
-    input.y = {depot.second};
-    input.demands = {0.0};
-    input.dronable = {true};
-
-    std::regex re_customer(
-        R"(^\s*(-?[\d\.]+)\s+(-?[\d\.]+)\s+(0|1)\s+([\d\.]+)\s*$)",
-        std::regex::multiline);
-    auto begin = std::sregex_iterator(data.begin(), data.end(), re_customer);
-    auto end = std::sregex_iterator();
-    for (auto it = begin; it != end; ++it) {
-        const std::smatch &match = *it;
-        input.x.push_back(std::stod(match[1].str()));
-        input.y.push_back(std::stod(match[2].str()));
-        input.dronable.push_back(match[3].str() == "1");
-        input.demands.push_back(std::stod(match[4].str()));
-        ++input.customers_count;
-    }
-
-    return input;
 }

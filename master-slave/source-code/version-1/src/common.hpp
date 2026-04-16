@@ -1,9 +1,15 @@
 #pragma once
+
 #include <iostream>
 #include <vector>
+#include <string>
 #include <map>
+#include <optional>
+
 #include <mpi.h>
 #include <omp.h>
+#include <CLI/CLI.hpp>
+#include <nlohmann/json.hpp>
 
 inline constexpr int MASTER_RANK = 0;
 

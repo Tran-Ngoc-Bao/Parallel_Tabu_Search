@@ -1,6 +1,5 @@
 #pragma once
 #include "common.hpp"
-#include "input.hpp"
 
 int count_diff_elite(const Elite &a, const Elite &b);
 
