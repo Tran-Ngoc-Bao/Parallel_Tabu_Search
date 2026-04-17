@@ -46,7 +46,7 @@ void pull_elite(Elite &e, int worker_id) {
     
 }
 
-void master(int size, const ProblemInput &problem_input) {
+void master(int size) {
     int elite_pool_count = 0;
     std::vector<Elite> elite_pool(ELITE_POOL_SIZE);
 

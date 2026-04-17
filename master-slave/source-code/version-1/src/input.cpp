@@ -1,6 +1,15 @@
 #include "input.hpp"
+#include "cli.hpp"
+#include "config.hpp"
 
-void input(int argc, char** argv) {
+#include <iostream>
+#include <fstream>
+#include <filesystem>
+
+#include <CLI/CLI.hpp>
+#include <nlohmann/json.hpp>
+
+int input(int argc, char* *argv) {
     CLI::App app{"Tabu Search for VRP with Drones"};
     app.require_subcommand(1);
 
@@ -105,4 +114,5 @@ void input(int argc, char** argv) {
         if (!f) { std::cerr << "Cannot open " << args.evaluate.solution << "\n"; return 1; }
         nlohmann::json j; f >> j;
     }
+    return 0;
 }
