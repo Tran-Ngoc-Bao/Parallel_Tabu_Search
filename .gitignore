@@ -3,5 +3,5 @@
 build/
 outputs/
 
-demo/asynchronous-mpi_openmp
-demo/asynchronous-mpi
+master-slave/source-code/concept/asynchronous-mpi_openmp
+master-slave/source-code/concept/asynchronous-mpi
