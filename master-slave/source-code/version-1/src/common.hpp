@@ -7,6 +7,8 @@
 #include <mpi.h>
 #include <omp.h>
 
+namespace common {
+
 inline constexpr int MASTER_RANK = 0;
 
 inline constexpr int TAG_ELITE_WORKER_SEND_2_MASTER = 1;
@@ -23,9 +25,12 @@ struct EliteElement {
 };
 
 struct Elite {
-    int worker_rank;
+    int worker_rank = -1;
     std::vector<EliteElement> elements;
 };
 
 std::vector<int> pack_elite(const Elite &e);
 Elite unpack_elite(const std::vector<int> &buf);
+void print_elite(const Elite &e, std::ostream &os = std::cout);
+
+} // namespace common

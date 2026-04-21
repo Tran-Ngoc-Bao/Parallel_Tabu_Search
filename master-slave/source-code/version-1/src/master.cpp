@@ -2,8 +2,8 @@
 
 const int ELITE_POOL_SIZE = 6;
 
-int count_diff_elite(const Elite &a, const Elite &b) {
-    auto extract = [](const Elite &e) {
+static int count_diff_elite(const common::Elite &a, const common::Elite &b) {
+    auto extract = [](const common::Elite &e) {
         std::map<int, int> m;
         for (const auto &el : e.elements)
             for (const auto &trip : el.trips)
@@ -25,7 +25,7 @@ int count_diff_elite(const Elite &a, const Elite &b) {
     return diff;
 }
 
-void push_elite(const Elite &e, int &elite_pool_count, std::vector<Elite> &elite_pool) {
+static void push_elite(const common::Elite &e, int &elite_pool_count, std::vector<common::Elite> &elite_pool) {
     if(elite_pool_count < ELITE_POOL_SIZE) {
         elite_pool[elite_pool_count++] = e;
     } else {
@@ -42,31 +42,32 @@ void push_elite(const Elite &e, int &elite_pool_count, std::vector<Elite> &elite
     }
 }
 
-void pull_elite(Elite &e, int worker_id) {
+static void pull_elite(common::Elite &e, int worker_id) {
     
 }
 
 void master(int size) {
     int elite_pool_count = 0;
-    std::vector<Elite> elite_pool(ELITE_POOL_SIZE);
+    std::vector<common::Elite> elite_pool(ELITE_POOL_SIZE);
 
     MPI_Status status;
-
+    
     while(true) {
         int flag = 0;
 
-        MPI_Iprobe(MPI_ANY_SOURCE, TAG_ELITE_WORKER_SEND_2_MASTER, MPI_COMM_WORLD, &flag, &status);
+        MPI_Iprobe(MPI_ANY_SOURCE, common::TAG_ELITE_WORKER_SEND_2_MASTER, MPI_COMM_WORLD, &flag, &status);
 
         if(flag) {
             int n;
-            MPI_Recv(&n, 1, MPI_INT, status.MPI_SOURCE, TAG_ELITE_WORKER_SEND_2_MASTER, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(&n, 1, MPI_INT, status.MPI_SOURCE, common::TAG_ELITE_WORKER_SEND_2_MASTER, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             std::vector<int> buf(n);
-            MPI_Recv(buf.data(), n, MPI_INT, status.MPI_SOURCE, TAG_ELITE_WORKER_SEND_2_MASTER, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(buf.data(), n, MPI_INT, status.MPI_SOURCE, common::TAG_ELITE_WORKER_SEND_2_MASTER, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-            Elite new_elite = unpack_elite(buf);
+            common::Elite new_elite = common::unpack_elite(buf);
             push_elite(new_elite, elite_pool_count, elite_pool);
 
+            return;
         }
     }
 }

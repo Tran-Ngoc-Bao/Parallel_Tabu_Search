@@ -1,4 +1,7 @@
 #include "common.hpp"
+#include <set>
+
+namespace common {
 
 static void pack_int(std::vector<int> &buf, int x) {
     buf.push_back(x);
@@ -60,3 +63,102 @@ Elite unpack_elite(const std::vector<int> &buf) {
     }
     return e;
 }
+
+void print_elite(const Elite &e, std::ostream &os) {
+    os << "Elite(worker_rank=" << e.worker_rank
+       << ", elements=" << e.elements.size() << ")\n";
+
+    for (std::size_t ei = 0; ei < e.elements.size(); ++ei) {
+        const auto &el = e.elements[ei];
+        const char *type_name = (el.type == 0) ? "truck" : "drone";
+
+        os << "  [Element " << ei << "] type=" << type_name
+           << "(" << el.type << ")"
+           << ", vehicle=" << el.vehicle_number
+           << ", trips=" << el.trips.size() << "\n";
+
+        for (std::size_t ti = 0; ti < el.trips.size(); ++ti) {
+            const auto &tr = el.trips[ti];
+            os << "    - Trip " << ti << ": ";
+
+            if (tr.customers.empty()) {
+                os << "<empty>\n";
+                continue;
+            }
+
+            std::set<int> next_nodes;
+            for (const auto &[cus, nxt] : tr.customers) {
+                (void) cus;
+                if (nxt != -1) {
+                    next_nodes.insert(nxt);
+                }
+            }
+
+            std::vector<int> starts;
+            starts.reserve(tr.customers.size());
+            for (const auto &[cus, nxt] : tr.customers) {
+                (void) nxt;
+                if (!next_nodes.count(cus)) {
+                    starts.push_back(cus);
+                }
+            }
+            if (starts.empty()) {
+                starts.push_back(tr.customers.begin()->first);
+            }
+
+            std::set<int> visited;
+            bool first_chain = true;
+
+            auto print_chain = [&](int start) {
+                if (!first_chain) {
+                    os << " | ";
+                }
+                first_chain = false;
+
+                int current = start;
+                bool first_node = true;
+                while (true) {
+                    if (!first_node) {
+                        os << "->";
+                    }
+                    first_node = false;
+                    os << current;
+                    visited.insert(current);
+
+                    auto it = tr.customers.find(current);
+                    if (it == tr.customers.end()) {
+                        os << "->?";
+                        break;
+                    }
+
+                    int nxt = it->second;
+                    if (nxt == -1) {
+                        os << "->-1";
+                        break;
+                    }
+                    if (visited.count(nxt)) {
+                        os << "->" << nxt << "(cycle)";
+                        break;
+                    }
+                    current = nxt;
+                }
+            };
+
+            for (int start : starts) {
+                if (!visited.count(start)) {
+                    print_chain(start);
+                }
+            }
+
+            for (const auto &[cus, nxt] : tr.customers) {
+                (void) nxt;
+                if (!visited.count(cus)) {
+                    print_chain(cus);
+                }
+            }
+            os << "\n";
+        }
+    }
+}
+
+} // namespace common

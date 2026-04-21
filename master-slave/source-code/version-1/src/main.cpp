@@ -4,9 +4,7 @@
 #include "worker.hpp"
 
 int main(int argc, char* *argv) {
-    std::cout << "HELLO\n";
     input(argc, argv);
-    return 0;
 
     MPI_Init(&argc, &argv);
 
@@ -16,7 +14,7 @@ int main(int argc, char* *argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    if(rank == MASTER_RANK) {
+    if(rank == common::MASTER_RANK) {
         master(size);
     } else {
         worker(rank);
@@ -24,7 +22,7 @@ int main(int argc, char* *argv) {
 
     double t1 = MPI_Wtime();
 
-    if(rank == MASTER_RANK) {
+    if(rank == common::MASTER_RANK) {
         std::cout << "Total wall time = " << (t1 - t0) << " s\n";
     }
 
