@@ -13,6 +13,8 @@ inline constexpr int MASTER_RANK = 0;
 
 inline constexpr int TAG_ELITE_WORKER_SEND_2_MASTER = 1;
 inline constexpr int TAG_ELITE_MASTER_SEND_2_WORKER = 2;
+inline constexpr int TAG_PULL_ELITE_WORKER_REQUEST = 3;
+inline constexpr int TAG_ELITE_MASTER_SEND_PULLED = 4;
 
 struct Trip {
     std::map<int, int> customers; // customers[cus] = next customer (-1: last customer)
