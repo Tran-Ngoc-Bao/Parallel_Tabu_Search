@@ -1,9 +1,15 @@
 #include "master.hpp"
+#include "common.hpp"
 #include "config.hpp"
-#include "tabu_search.hpp"
+#include "solutions.hpp"
+
+#include <iostream>
+#include <map>
 #include <random>
 #include <thread>
 #include <chrono>
+#include <vector>
+#include <mpi.h>
 
 const int ELITE_POOL_SIZE = 5;
 
@@ -157,10 +163,10 @@ void master(int size) {
     if (elite_pool_count > 0) {
         const Config &cfg = global_config();
         int best_idx = 0;
-        double best_cost = tabu_search::compute_elite_cost(cfg, elite_pool[0]);
+        double best_cost = solutions::compute_elite_cost(cfg, elite_pool[0]);
 
         for (int i = 1; i < elite_pool_count; ++i) {
-            double cost = tabu_search::compute_elite_cost(cfg, elite_pool[i]);
+            double cost = solutions::compute_elite_cost(cfg, elite_pool[i]);
             if (cost < best_cost) {
                 best_cost = cost;
                 best_idx = i;

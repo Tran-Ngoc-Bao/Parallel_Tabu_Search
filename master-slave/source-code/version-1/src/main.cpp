@@ -3,6 +3,9 @@
 #include "master.hpp"
 #include "worker.hpp"
 
+#include <iostream>
+#include <mpi.h>
+
 int main(int argc, char* *argv) {
     input(argc, argv);
 

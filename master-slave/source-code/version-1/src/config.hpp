@@ -1,11 +1,11 @@
 #pragma once
+#include "cli.hpp"
 #include <vector>
 #include <string>
 #include <optional>
 #include <cmath>
-#include <stdexcept>
+#include <limits>
 #include <nlohmann/json.hpp>
-#include "cli.hpp"
 
 // TruckConfig
 struct TruckConfig {

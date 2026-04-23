@@ -1,11 +1,16 @@
 #include "worker.hpp"
+#include "common.hpp"
 #include "config.hpp"
-#include "tabu_search.hpp"
+#include "solutions.hpp"
 
 #include <algorithm>
+#include <iostream>
 #include <numeric>
 #include <random>
+#include <string>
 #include <stdexcept>
+#include <vector>
+#include <mpi.h>
 
 const int PULL_ELITE_NO_IMPROVE_INTERVAL = 50;
 const int STOP_NO_IMPROVE_THRESHOLD = 1000;
@@ -296,13 +301,13 @@ void worker(int rank) {
     common::Elite elite = random_elite();
     elite.worker_rank = rank;
     
-    double best_cost = tabu_search::compute_elite_cost(cfg, elite);
+    double best_cost = solutions::compute_elite_cost(cfg, elite);
     std::cerr << "[Worker " << rank << "] Initial elite cost: " << best_cost << std::endl;
     
     int no_improve_count = 0;
     int iter = 0;
     
-    std::vector<int> neighborhood_order = tabu_search::generate_neighborhood_order(rng);
+    std::vector<int> neighborhood_order = solutions::generate_neighborhood_order(rng);
     std::cerr << "[Worker " << rank << "] Neighborhood order: ";
     for (int nh : neighborhood_order) {
         std::cerr << nh << " ";
@@ -318,28 +323,33 @@ void worker(int rank) {
         common::Elite candidate = elite;
         iter++;
 
-        switch (nh_idx) {
-            case 1:
-                candidate = tabu_search::apply_relocate(cfg, candidate, rng);
+        switch (static_cast<solutions::Neighborhood>(nh_idx)) {
+            case solutions::Neighborhood::Move10:
+                candidate = solutions::apply_move10(cfg, candidate, rng);
                 break;
-            case 2:
-                candidate = tabu_search::apply_swap(cfg, candidate, rng);
+            case solutions::Neighborhood::Move11:
+                candidate = solutions::apply_move11(cfg, candidate, rng);
                 break;
-            case 3:
-                candidate = tabu_search::apply_twoopt(cfg, candidate, rng);
+            case solutions::Neighborhood::Move20:
+                candidate = solutions::apply_move20(cfg, candidate, rng);
                 break;
-            case 4:
-                candidate = tabu_search::apply_move2(cfg, candidate, rng);
+            case solutions::Neighborhood::Move21:
+                candidate = solutions::apply_move21(cfg, candidate, rng);
                 break;
-            case 5:
-            case 6:
-                // Skip complex neighborhoods for now
+            case solutions::Neighborhood::Move22:
+                candidate = solutions::apply_move22(cfg, candidate, rng);
+                break;
+            case solutions::Neighborhood::TwoOpt:
+                candidate = solutions::apply_twoopt(cfg, candidate, rng);
+                break;
+            case solutions::Neighborhood::EjectionChain:
+                candidate = solutions::apply_ejection_chain(cfg, candidate, rng);
                 break;
             default:
                 break;
         }
 
-        double candidate_cost = tabu_search::compute_elite_cost(cfg, candidate);
+        double candidate_cost = solutions::compute_elite_cost(cfg, candidate);
 
         if (candidate_cost < best_cost) {
             elite = candidate;
