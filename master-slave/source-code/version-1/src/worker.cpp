@@ -7,6 +7,9 @@
 #include <random>
 #include <stdexcept>
 
+const int PULL_ELITE_NO_IMPROVE_INTERVAL = 50;
+const int STOP_NO_IMPROVE_THRESHOLD = 1000;
+
 static std::mt19937_64 make_rng(const Config &cfg) {
     if (cfg.seed) {
         return std::mt19937_64(*cfg.seed);
@@ -112,6 +115,7 @@ static common::Trip route_to_trip(const std::vector<int> &route) {
     return trip;
 }
 
+// Random each customer to a random feasible vehicle, then devide it into trips in the next functions
 static std::vector<std::vector<int>> build_vehicle_customers(const Config &cfg, std::mt19937_64 &rng) {
     std::vector<std::vector<int>> vehicle_customers(cfg.trucks_count + cfg.drones_count);
 
@@ -142,6 +146,7 @@ static std::vector<std::vector<int>> build_vehicle_customers(const Config &cfg, 
     return vehicle_customers;
 }
 
+// Devide customers assigned to a truck into trips
 static common::EliteElement build_truck_element(const Config &cfg, std::size_t vehicle_number, std::vector<int> &customers, std::mt19937_64 &rng) {
     std::shuffle(customers.begin(), customers.end(), rng);
 
@@ -188,6 +193,7 @@ static common::EliteElement build_truck_element(const Config &cfg, std::size_t v
     return element;
 }
 
+// Devide customers assigned to a drone into trips
 static common::EliteElement build_drone_element(const Config &cfg, std::size_t vehicle_number, std::vector<int> &customers, std::mt19937_64 &rng) {
     std::shuffle(customers.begin(), customers.end(), rng);
 
@@ -287,22 +293,15 @@ void worker(int rank) {
     const Config &cfg = global_config();
     std::mt19937_64 rng = make_rng(cfg);
     
-    // Generate initial random elite solution
     common::Elite elite = random_elite();
     elite.worker_rank = rank;
     
     double best_cost = tabu_search::compute_elite_cost(cfg, elite);
     std::cerr << "[Worker " << rank << "] Initial elite cost: " << best_cost << std::endl;
     
-    // Run tabu search iterations
-    int tabu_iterations = (int)(cfg.customers_count * cfg.tabu_size_factor);
-    tabu_iterations = std::max(tabu_iterations, 50);
-    tabu_iterations = std::min(tabu_iterations, 500);
-    
     int no_improve_count = 0;
-    const int NO_IMPROVE_THRESHOLD = 50;
+    int iter = 0;
     
-    // Generate fixed random neighborhood order for this worker
     std::vector<int> neighborhood_order = tabu_search::generate_neighborhood_order(rng);
     std::cerr << "[Worker " << rank << "] Neighborhood order: ";
     for (int nh : neighborhood_order) {
@@ -310,92 +309,80 @@ void worker(int rank) {
     }
     std::cerr << std::endl;
     
-    // Main tabu search loop
-    for (int iter = 0; iter < tabu_iterations; ++iter) {
-        bool improved = false;
-        
-        for (int nh_idx : neighborhood_order) {
-            common::Elite candidate = elite;
-            
-            switch (nh_idx) {
-                case 1:
-                    candidate = tabu_search::apply_relocate(cfg, candidate, rng);
-                    break;
-                case 2:
-                    candidate = tabu_search::apply_swap(cfg, candidate, rng);
-                    break;
-                case 3:
-                    candidate = tabu_search::apply_twoopt(cfg, candidate, rng);
-                    break;
-                case 4:
-                    candidate = tabu_search::apply_move2(cfg, candidate, rng);
-                    break;
-                case 5:
-                case 6:
-                    // Skip complex neighborhoods for now
-                    break;
-                default:
-                    break;
-            }
-            
-            double candidate_cost = tabu_search::compute_elite_cost(cfg, candidate);
-            
-            if (candidate_cost < best_cost) {
-                elite = candidate;
-                best_cost = candidate_cost;
-                improved = true;
-                no_improve_count = 0;
-                
-                std::cerr << "[Worker " << rank << "] Improvement at iter " << iter 
-                          << ", nh " << nh_idx << ", cost " << best_cost << std::endl;
-                
-                // Push improved elite to master
-                elite.worker_rank = rank;
-                auto buf = common::pack_elite(elite);
-                int n = (int) buf.size();
-                MPI_Send(&n, 1, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_WORKER_SEND_2_MASTER, MPI_COMM_WORLD);
-                MPI_Send(buf.data(), n, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_WORKER_SEND_2_MASTER, MPI_COMM_WORLD);
-                
-                break; // Move to next iteration after improvement
-            }
+    if (neighborhood_order.empty()) {
+        throw std::runtime_error("Neighborhood order is empty");
+    }
+
+    while (no_improve_count < STOP_NO_IMPROVE_THRESHOLD) {
+        const int nh_idx = neighborhood_order[iter % static_cast<int>(neighborhood_order.size())];
+        common::Elite candidate = elite;
+        iter++;
+
+        switch (nh_idx) {
+            case 1:
+                candidate = tabu_search::apply_relocate(cfg, candidate, rng);
+                break;
+            case 2:
+                candidate = tabu_search::apply_swap(cfg, candidate, rng);
+                break;
+            case 3:
+                candidate = tabu_search::apply_twoopt(cfg, candidate, rng);
+                break;
+            case 4:
+                candidate = tabu_search::apply_move2(cfg, candidate, rng);
+                break;
+            case 5:
+            case 6:
+                // Skip complex neighborhoods for now
+                break;
+            default:
+                break;
         }
-        
-        if (!improved) {
-            no_improve_count++;
-            
-            // After NO_IMPROVE_THRESHOLD iterations without improvement, pull elite from master
-            if (no_improve_count >= NO_IMPROVE_THRESHOLD) {
-                std::cerr << "[Worker " << rank << "] No improvement for " << NO_IMPROVE_THRESHOLD 
-                          << " iterations, pulling elite from master" << std::endl;
-                
-                // Request elite from master
-                int req = rank;
-                MPI_Send(&req, 1, MPI_INT, common::MASTER_RANK, common::TAG_PULL_ELITE_WORKER_REQUEST, MPI_COMM_WORLD);
-                
-                // Receive pulled elite
-                int n;
-                MPI_Recv(&n, 1, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                
-                std::vector<int> buf(n);
-                MPI_Recv(buf.data(), n, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                
-                elite = common::unpack_elite(buf);
-                elite.worker_rank = rank;
-                best_cost = tabu_search::compute_elite_cost(cfg, elite);
-                no_improve_count = 0;
-                
-                std::cerr << "[Worker " << rank << "] Pulled elite from master, cost " << best_cost << std::endl;
-            }
+
+        double candidate_cost = tabu_search::compute_elite_cost(cfg, candidate);
+
+        if (candidate_cost < best_cost) {
+            elite = candidate;
+            best_cost = candidate_cost;
+            no_improve_count = 0;
+
+            std::cerr << "[Worker " << rank << "] Improvement at iter " << iter
+                      << ", nh " << nh_idx << ", cost " << best_cost << std::endl;
+
+            elite.worker_rank = rank;
+            auto buf = common::pack_elite(elite);
+            int n = (int) buf.size();
+            MPI_Send(&n, 1, MPI_INT, common::MASTER_RANK, common::TAG_PUSH_ELITE_WORKER_REQUEST, MPI_COMM_WORLD);
+            MPI_Send(buf.data(), n, MPI_INT, common::MASTER_RANK, common::TAG_PUSH_ELITE_WORKER_REQUEST, MPI_COMM_WORLD);
+            continue;
+        }
+
+        no_improve_count++;
+
+        if (no_improve_count % PULL_ELITE_NO_IMPROVE_INTERVAL == 0) {
+            std::cerr << "[Worker " << rank << "] No improvement for " << no_improve_count
+                      << " evaluations, pulling elite from master" << std::endl;
+
+            int req = rank;
+            MPI_Send(&req, 1, MPI_INT, common::MASTER_RANK, common::TAG_PULL_ELITE_WORKER_REQUEST, MPI_COMM_WORLD);
+
+            int n;
+            MPI_Recv(&n, 1, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            std::vector<int> buf(n);
+            MPI_Recv(buf.data(), n, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            elite = common::unpack_elite(buf);
+            elite.worker_rank = rank;
+
+            std::cerr << "[Worker " << rank << "] Pulled elite from master; keep local best_cost = "
+                      << best_cost << std::endl;
         }
     }
-    
-    // Final push of best elite found
-    elite.worker_rank = rank;
-    common::print_elite(elite);
-    auto buf = common::pack_elite(elite);
-    int n = (int) buf.size();
-    MPI_Send(&n, 1, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_WORKER_SEND_2_MASTER, MPI_COMM_WORLD);
-    MPI_Send(buf.data(), n, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_WORKER_SEND_2_MASTER, MPI_COMM_WORLD);
-    
-    std::cerr << "[Worker " << rank << "] Final best cost: " << best_cost << std::endl;
+
+    int done_rank = rank;
+    MPI_Send(&done_rank, 1, MPI_INT, common::MASTER_RANK, common::TAG_WORKER_DONE, MPI_COMM_WORLD);
+
+    std::cerr << "[Worker " << rank << "] Finished after " << iter
+              << " neighborhood evaluations with best_cost " << best_cost << std::endl;
 }

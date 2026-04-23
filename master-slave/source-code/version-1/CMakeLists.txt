@@ -29,7 +29,8 @@ add_executable(master_slave_v1
     src/input.cpp
     src/config.cpp
     src/master.cpp
-    src/worker.cpp src/tabu_search.cpp
+    src/worker.cpp
+    src/tabu_search.cpp
 )
 
 target_include_directories(master_slave_v1 PRIVATE src)
