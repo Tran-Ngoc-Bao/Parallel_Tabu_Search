@@ -13,7 +13,7 @@
 #include <mpi.h>
 
 const int PULL_ELITE_NO_IMPROVE_INTERVAL = 50;
-const int STOP_NO_IMPROVE_THRESHOLD = 1000;
+const int STOP_NO_IMPROVE_THRESHOLD = 300;
 
 static std::mt19937_64 make_rng(const Config &cfg) {
     if (cfg.seed) {
@@ -304,9 +304,15 @@ void worker(int rank) {
     double best_cost = solutions::compute_elite_cost(cfg, elite);
     std::cerr << "[Worker " << rank << "] Initial elite cost: " << best_cost << std::endl;
     
+    elite.worker_rank = rank;
+    auto buf = common::pack_elite(elite);
+    int n = (int) buf.size();
+    MPI_Send(&n, 1, MPI_INT, common::MASTER_RANK, common::TAG_PUSH_ELITE_WORKER_REQUEST, MPI_COMM_WORLD);
+    MPI_Send(buf.data(), n, MPI_INT, common::MASTER_RANK, common::TAG_PUSH_ELITE_WORKER_REQUEST, MPI_COMM_WORLD);
+    std::cerr << "[Worker " << rank << "] Pushed initial elite to master" << std::endl;
+    
     int no_improve_count = 0;
     int iter = 0;
-    
     std::vector<int> neighborhood_order = solutions::generate_neighborhood_order(rng);
     std::cerr << "[Worker " << rank << "] Neighborhood order: ";
     for (int nh : neighborhood_order) {
@@ -382,11 +388,10 @@ void worker(int rank) {
             std::vector<int> buf(n);
             MPI_Recv(buf.data(), n, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-            elite = common::unpack_elite(buf);
-            elite.worker_rank = rank;
-
-            std::cerr << "[Worker " << rank << "] Pulled elite from master; keep local best_cost = "
-                      << best_cost << std::endl;
+            common::Elite pulled = common::unpack_elite(buf);
+            pulled.worker_rank = rank;
+            elite = std::move(pulled);
+            std::cerr << "[Worker " << rank << "] Pulled elite from master" << std::endl;
         }
     }
 

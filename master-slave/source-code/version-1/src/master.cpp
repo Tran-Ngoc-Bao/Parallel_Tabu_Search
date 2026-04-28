@@ -11,7 +11,8 @@
 #include <vector>
 #include <mpi.h>
 
-const int ELITE_POOL_SIZE = 5;
+const int ELITE_POOL_SIZE = 6;
+const int PULL_ELITE_REPEAT_LIMIT = 3;
 
 static int count_diff_elite(const common::Elite &a, const common::Elite &b) {
     auto extract = [](const common::Elite &e) {
@@ -36,16 +37,20 @@ static int count_diff_elite(const common::Elite &a, const common::Elite &b) {
     return diff;
 }
 
+static std::vector<int> elite_signature(const common::Elite &elite) {
+    return common::pack_elite(elite);
+}
+
 static void push_elite(const common::Elite &e, int &elite_pool_count, std::vector<common::Elite> &elite_pool) {
     if (elite_pool_count < ELITE_POOL_SIZE) {
         elite_pool[elite_pool_count++] = e;
     } else {
         int replace = 0;
-        int max_diff = count_diff_elite(e, elite_pool[0]);
+        int min_diff = count_diff_elite(e, elite_pool[0]);
         for (int i = 1; i < ELITE_POOL_SIZE; ++i) {
-            int diff = count_diff_elite(e, elite_pool[i]);
-            if (diff > max_diff) {
-                max_diff = diff;
+            const int diff = count_diff_elite(e, elite_pool[i]);
+            if (diff < min_diff) {
+                min_diff = diff;
                 replace = i;
             }
         }
@@ -53,21 +58,49 @@ static void push_elite(const common::Elite &e, int &elite_pool_count, std::vecto
     }
 }
 
-static void pull_elite(common::Elite &e, const std::vector<common::Elite> &elite_pool, int elite_pool_count, int requester_rank) {
-    if (elite_pool_count == 0) {
-        return;
-    }
-
+static void pull_elite(common::Elite &e,
+                       const std::vector<common::Elite> &elite_pool,
+                       int elite_pool_count,
+                       int requester_rank,
+                       const std::map<std::vector<int>, int> &pulled_counts) {
     std::vector<int> candidate_indices;
     candidate_indices.reserve(elite_pool_count);
-    for (int i = 0; i < elite_pool_count; ++i) {
-        if (elite_pool[i].worker_rank != requester_rank) {
+
+    auto add_candidates = [&](bool different_worker_only, bool respect_repeat_limit, bool prefer_under_limit) {
+        candidate_indices.clear();
+        for (int i = 0; i < elite_pool_count; ++i) {
+            if (different_worker_only && elite_pool[i].worker_rank == requester_rank) {
+                continue;
+            }
+            if (!different_worker_only && elite_pool[i].worker_rank != requester_rank) {
+                continue;
+            }
+
+            const std::vector<int> signature = elite_signature(elite_pool[i]);
+            const auto it = pulled_counts.find(signature);
+            const int count = (it == pulled_counts.end()) ? 0 : it->second;
+
+            if (respect_repeat_limit && count >= PULL_ELITE_REPEAT_LIMIT) {
+                continue;
+            }
+
+            if (prefer_under_limit && count >= PULL_ELITE_REPEAT_LIMIT) {
+                continue;
+            }
+
             candidate_indices.push_back(i);
         }
-    }
+    };
 
+    add_candidates(true, true, true);
     if (candidate_indices.empty()) {
-        return;
+        add_candidates(false, true, true);
+    }
+    if (candidate_indices.empty()) {
+        add_candidates(false, false, false);
+    }
+    if (candidate_indices.empty()) {
+        add_candidates(true, false, false);
     }
 
     static std::random_device rd;
@@ -81,6 +114,7 @@ void master(int size) {
     int elite_pool_count = 0;
     std::vector<common::Elite> elite_pool(ELITE_POOL_SIZE);
     std::vector<char> worker_done(size, 0);
+    std::vector<std::map<std::vector<int>, int>> worker_pulled_counts(size);
     int done_workers = 0;
 
     MPI_Status status;
@@ -101,8 +135,7 @@ void master(int size) {
 
             common::Elite new_elite = common::unpack_elite(buf);
             push_elite(new_elite, elite_pool_count, elite_pool);
-            
-            std::cerr << "[Master] Received elite from worker " << status.MPI_SOURCE 
+            std::cerr << "[Master] Received elite from worker " << status.MPI_SOURCE
                       << ", pool size: " << elite_pool_count << "\n";
         }
         
@@ -113,13 +146,19 @@ void master(int size) {
             MPI_Recv(&worker_rank, 1, MPI_INT, status.MPI_SOURCE, common::TAG_PULL_ELITE_WORKER_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             
             common::Elite pulled_elite;
-            pull_elite(pulled_elite, elite_pool, elite_pool_count, worker_rank);
-            
+            pull_elite(pulled_elite,
+                       elite_pool,
+                       elite_pool_count,
+                       worker_rank,
+                       worker_pulled_counts[worker_rank]);
+
+            const std::vector<int> pulled_signature = elite_signature(pulled_elite);
+            worker_pulled_counts[worker_rank][pulled_signature]++;
+
             auto buf = common::pack_elite(pulled_elite);
             int n = (int) buf.size();
             MPI_Send(&n, 1, MPI_INT, worker_rank, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD);
             MPI_Send(buf.data(), n, MPI_INT, worker_rank, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD);
-            
             std::cerr << "[Master] Sent pulled elite to worker " << worker_rank << "\n";
         }
 
