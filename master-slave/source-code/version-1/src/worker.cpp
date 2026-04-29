@@ -13,7 +13,8 @@
 #include <mpi.h>
 
 const int PULL_ELITE_NO_IMPROVE_INTERVAL = 50;
-const int STOP_NO_IMPROVE_THRESHOLD = 300;
+const int RANDOM_RESTART_INTERVAL = 3;
+const int STOP_AFTER_PULLS = 8;
 
 static std::mt19937_64 make_rng(const Config &cfg) {
     if (cfg.seed) {
@@ -309,22 +310,13 @@ void worker(int rank) {
     int n = (int) buf.size();
     MPI_Send(&n, 1, MPI_INT, common::MASTER_RANK, common::TAG_PUSH_ELITE_WORKER_REQUEST, MPI_COMM_WORLD);
     MPI_Send(buf.data(), n, MPI_INT, common::MASTER_RANK, common::TAG_PUSH_ELITE_WORKER_REQUEST, MPI_COMM_WORLD);
-    std::cerr << "[Worker " << rank << "] Pushed initial elite to master" << std::endl;
     
     int no_improve_count = 0;
+    int pull_count = 0;
     int iter = 0;
     std::vector<int> neighborhood_order = solutions::generate_neighborhood_order(rng);
-    std::cerr << "[Worker " << rank << "] Neighborhood order: ";
-    for (int nh : neighborhood_order) {
-        std::cerr << nh << " ";
-    }
-    std::cerr << std::endl;
-    
-    if (neighborhood_order.empty()) {
-        throw std::runtime_error("Neighborhood order is empty");
-    }
 
-    while (no_improve_count < STOP_NO_IMPROVE_THRESHOLD) {
+    while (true) {
         const int nh_idx = neighborhood_order[iter % static_cast<int>(neighborhood_order.size())];
         common::Elite candidate = elite;
         iter++;
@@ -362,9 +354,6 @@ void worker(int rank) {
             best_cost = candidate_cost;
             no_improve_count = 0;
 
-            std::cerr << "[Worker " << rank << "] Improvement at iter " << iter
-                      << ", nh " << nh_idx << ", cost " << best_cost << std::endl;
-
             elite.worker_rank = rank;
             auto buf = common::pack_elite(elite);
             int n = (int) buf.size();
@@ -376,28 +365,41 @@ void worker(int rank) {
         no_improve_count++;
 
         if (no_improve_count % PULL_ELITE_NO_IMPROVE_INTERVAL == 0) {
-            std::cerr << "[Worker " << rank << "] No improvement for " << no_improve_count
-                      << " evaluations, pulling elite from master" << std::endl;
+            if (++pull_count > STOP_AFTER_PULLS) {
+                break;
+            }
+            
+            if (pull_count > 0 && pull_count % RANDOM_RESTART_INTERVAL == 0) {
+                elite = build_random_elite(cfg, rng);
+                elite.worker_rank = rank;
+                no_improve_count = 0;
+                std::cerr << "[Worker " << rank << "] Random restart (pull " << pull_count << ").\n";
+            } else {
+                int req = rank;
+                MPI_Send(&req, 1, MPI_INT, common::MASTER_RANK, common::TAG_PULL_ELITE_WORKER_REQUEST, MPI_COMM_WORLD);
 
-            int req = rank;
-            MPI_Send(&req, 1, MPI_INT, common::MASTER_RANK, common::TAG_PULL_ELITE_WORKER_REQUEST, MPI_COMM_WORLD);
+                int n;
+                MPI_Recv(&n, 1, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-            int n;
-            MPI_Recv(&n, 1, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                std::vector<int> buf(n);
+                MPI_Recv(buf.data(), n, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-            std::vector<int> buf(n);
-            MPI_Recv(buf.data(), n, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                common::Elite pulled = common::unpack_elite(buf);
+                pulled.worker_rank = rank;
+                elite = std::move(pulled);
 
-            common::Elite pulled = common::unpack_elite(buf);
-            pulled.worker_rank = rank;
-            elite = std::move(pulled);
-            std::cerr << "[Worker " << rank << "] Pulled elite from master" << std::endl;
+                double pulled_cost = solutions::compute_elite_cost(cfg, elite);
+                if (pulled_cost < best_cost) {
+                    best_cost = pulled_cost;
+                    no_improve_count = 0;
+                }
+                std::cerr << "[Worker " << rank << "] Pulled elite with cost " << pulled_cost << " (pull " << pull_count << ").\n";
+            }
         }
     }
 
     int done_rank = rank;
     MPI_Send(&done_rank, 1, MPI_INT, common::MASTER_RANK, common::TAG_WORKER_DONE, MPI_COMM_WORLD);
 
-    std::cerr << "[Worker " << rank << "] Finished after " << iter
-              << " neighborhood evaluations with best_cost " << best_cost << std::endl;
+    std::cerr << "[Worker " << rank << "] Final best_cost: " << best_cost << '\n';
 }

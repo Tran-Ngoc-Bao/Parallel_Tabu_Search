@@ -8,11 +8,24 @@
 #include <random>
 #include <thread>
 #include <chrono>
+#include <limits>
 #include <vector>
+#include <sstream>
 #include <mpi.h>
 
 const int ELITE_POOL_SIZE = 6;
-const int PULL_ELITE_REPEAT_LIMIT = 3;
+
+static void update_global_best_elite(const common::Elite &candidate,
+                                     const Config &cfg,
+                                     double &global_best_cost,
+                                     common::Elite &global_best_elite) {
+    const double candidate_cost = solutions::compute_elite_cost(cfg, candidate);
+    if (candidate_cost < global_best_cost) {
+        global_best_cost = candidate_cost;
+        global_best_elite = candidate;
+        std::cerr << "[Master] Updated global best elite with cost " << global_best_cost << " from worker " << candidate.worker_rank << "\n";
+    }
+}
 
 static int count_diff_elite(const common::Elite &a, const common::Elite &b) {
     auto extract = [](const common::Elite &e) {
@@ -37,10 +50,6 @@ static int count_diff_elite(const common::Elite &a, const common::Elite &b) {
     return diff;
 }
 
-static std::vector<int> elite_signature(const common::Elite &elite) {
-    return common::pack_elite(elite);
-}
-
 static void push_elite(const common::Elite &e, int &elite_pool_count, std::vector<common::Elite> &elite_pool) {
     if (elite_pool_count < ELITE_POOL_SIZE) {
         elite_pool[elite_pool_count++] = e;
@@ -58,49 +67,12 @@ static void push_elite(const common::Elite &e, int &elite_pool_count, std::vecto
     }
 }
 
-static void pull_elite(common::Elite &e,
-                       const std::vector<common::Elite> &elite_pool,
-                       int elite_pool_count,
-                       int requester_rank,
-                       const std::map<std::vector<int>, int> &pulled_counts) {
+static void pull_elite(common::Elite &e, const std::vector<common::Elite> &elite_pool, int elite_pool_count) {
     std::vector<int> candidate_indices;
     candidate_indices.reserve(elite_pool_count);
 
-    auto add_candidates = [&](bool different_worker_only, bool respect_repeat_limit, bool prefer_under_limit) {
-        candidate_indices.clear();
-        for (int i = 0; i < elite_pool_count; ++i) {
-            if (different_worker_only && elite_pool[i].worker_rank == requester_rank) {
-                continue;
-            }
-            if (!different_worker_only && elite_pool[i].worker_rank != requester_rank) {
-                continue;
-            }
-
-            const std::vector<int> signature = elite_signature(elite_pool[i]);
-            const auto it = pulled_counts.find(signature);
-            const int count = (it == pulled_counts.end()) ? 0 : it->second;
-
-            if (respect_repeat_limit && count >= PULL_ELITE_REPEAT_LIMIT) {
-                continue;
-            }
-
-            if (prefer_under_limit && count >= PULL_ELITE_REPEAT_LIMIT) {
-                continue;
-            }
-
-            candidate_indices.push_back(i);
-        }
-    };
-
-    add_candidates(true, true, true);
-    if (candidate_indices.empty()) {
-        add_candidates(false, true, true);
-    }
-    if (candidate_indices.empty()) {
-        add_candidates(false, false, false);
-    }
-    if (candidate_indices.empty()) {
-        add_candidates(true, false, false);
+    for (int i = 0; i < elite_pool_count; ++i) {
+        candidate_indices.push_back(i);
     }
 
     static std::random_device rd;
@@ -114,8 +86,11 @@ void master(int size) {
     int elite_pool_count = 0;
     std::vector<common::Elite> elite_pool(ELITE_POOL_SIZE);
     std::vector<char> worker_done(size, 0);
-    std::vector<std::map<std::vector<int>, int>> worker_pulled_counts(size);
     int done_workers = 0;
+    double global_best_cost = std::numeric_limits<double>::infinity();
+    common::Elite global_best_elite;
+
+    const Config &cfg = global_config();
 
     MPI_Status status;
     int iterations = 0;
@@ -134,11 +109,10 @@ void master(int size) {
             MPI_Recv(buf.data(), n, MPI_INT, status.MPI_SOURCE, common::TAG_PUSH_ELITE_WORKER_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             common::Elite new_elite = common::unpack_elite(buf);
+            update_global_best_elite(new_elite, cfg, global_best_cost, global_best_elite);
             push_elite(new_elite, elite_pool_count, elite_pool);
-            std::cerr << "[Master] Received elite from worker " << status.MPI_SOURCE
-                      << ", pool size: " << elite_pool_count << "\n";
         }
-        
+
         MPI_Iprobe(MPI_ANY_SOURCE, common::TAG_PULL_ELITE_WORKER_REQUEST, MPI_COMM_WORLD, &flag_pull, &status);
         
         if (flag_pull) {
@@ -146,20 +120,12 @@ void master(int size) {
             MPI_Recv(&worker_rank, 1, MPI_INT, status.MPI_SOURCE, common::TAG_PULL_ELITE_WORKER_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             
             common::Elite pulled_elite;
-            pull_elite(pulled_elite,
-                       elite_pool,
-                       elite_pool_count,
-                       worker_rank,
-                       worker_pulled_counts[worker_rank]);
-
-            const std::vector<int> pulled_signature = elite_signature(pulled_elite);
-            worker_pulled_counts[worker_rank][pulled_signature]++;
+            pull_elite(pulled_elite, elite_pool, elite_pool_count);
 
             auto buf = common::pack_elite(pulled_elite);
             int n = (int) buf.size();
             MPI_Send(&n, 1, MPI_INT, worker_rank, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD);
             MPI_Send(buf.data(), n, MPI_INT, worker_rank, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD);
-            std::cerr << "[Master] Sent pulled elite to worker " << worker_rank << "\n";
         }
 
         MPI_Iprobe(MPI_ANY_SOURCE, common::TAG_WORKER_DONE, MPI_COMM_WORLD, &flag_done, &status);
@@ -171,53 +137,20 @@ void master(int size) {
             if (worker_rank > common::MASTER_RANK && worker_rank < size && !worker_done[worker_rank]) {
                 worker_done[worker_rank] = 1;
                 done_workers++;
-                std::cerr << "[Master] Worker " << worker_rank << " finished (" << done_workers
-                          << "/" << (size - 1) << ")\n";
             }
         }
-        
+
         if (!flag_push && !flag_pull && !flag_done) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 
-    // Drain remaining pushed elites that may arrive just before/with worker done signals.
-    while (true) {
-        int flag_push = 0;
-        MPI_Iprobe(MPI_ANY_SOURCE, common::TAG_PUSH_ELITE_WORKER_REQUEST, MPI_COMM_WORLD, &flag_push, &status);
-        if (!flag_push) {
-            break;
-        }
-
-        int n;
-        MPI_Recv(&n, 1, MPI_INT, status.MPI_SOURCE, common::TAG_PUSH_ELITE_WORKER_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-        std::vector<int> buf(n);
-        MPI_Recv(buf.data(), n, MPI_INT, status.MPI_SOURCE, common::TAG_PUSH_ELITE_WORKER_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-        common::Elite new_elite = common::unpack_elite(buf);
-        push_elite(new_elite, elite_pool_count, elite_pool);
+    {
+        std::ostringstream out;
+        out << "[Master] Final global_best_cost: " << global_best_cost
+            << " (received from worker " << global_best_elite.worker_rank << ")\n";
+        out << "[Master] Final global_best_elite:\n";
+        common::print_elite(global_best_elite, out);
+        std::cerr << out.str();
     }
-
-    if (elite_pool_count > 0) {
-        const Config &cfg = global_config();
-        int best_idx = 0;
-        double best_cost = solutions::compute_elite_cost(cfg, elite_pool[0]);
-
-        for (int i = 1; i < elite_pool_count; ++i) {
-            double cost = solutions::compute_elite_cost(cfg, elite_pool[i]);
-            if (cost < best_cost) {
-                best_cost = cost;
-                best_idx = i;
-            }
-        }
-
-        std::cerr << "[Master] Best elite in pool has cost " << best_cost
-                  << " from worker " << elite_pool[best_idx].worker_rank << "\n";
-        common::print_elite(elite_pool[best_idx], std::cerr);
-    } else {
-        std::cerr << "[Master] Elite pool is empty at finish\n";
-    }
-    
-    std::cerr << "[Master] Finished after " << iterations << " iterations with all workers done\n";
 }
