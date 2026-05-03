@@ -1,11 +1,15 @@
 #include "worker.hpp"
 #include "common.hpp"
+#include "clusterize.hpp"
 #include "config.hpp"
 #include "solutions.hpp"
 
 #include <algorithm>
 #include <iostream>
 #include <numeric>
+#include <limits>
+#include <queue>
+#include <set>
 #include <random>
 #include <string>
 #include <stdexcept>
@@ -13,8 +17,7 @@
 #include <mpi.h>
 
 const int PULL_ELITE_NO_IMPROVE_INTERVAL = 50;
-const int RANDOM_RESTART_INTERVAL = 3;
-const int STOP_AFTER_PULLS = 8;
+const int STOP_AFTER_PULLS = 10;
 
 static std::mt19937_64 make_rng(const Config &cfg) {
     if (cfg.seed) {
@@ -30,87 +33,6 @@ static double customer_demand(const Config &cfg, std::size_t customer) {
     return cfg.demands[customer];
 }
 
-static bool is_truck_customer_feasible(const Config &cfg, std::size_t customer) {
-    return customer_demand(cfg, customer) <= cfg.truck.capacity;
-}
-
-static bool is_drone_customer_feasible(const Config &cfg, std::size_t customer) {
-    if (!cfg.dronable[customer]) {
-        return false;
-    }
-
-    const auto &drone = cfg.drone;
-    const double dem = customer_demand(cfg, customer);
-    if (dem > drone.capacity()) {
-        return false;
-    }
-
-    const double takeoff = drone.takeoff_time();
-    const double landing = drone.landing_time();
-    const double cruise_dist = cfg.drone_distances[0][customer] + cfg.drone_distances[customer][0];
-    if (takeoff + drone.cruise_time(cruise_dist) + landing > drone.fixed_time()) {
-        return false;
-    }
-
-    const double takeoff_from_depot = drone.takeoff_power(0.0);
-    const double landing_from_depot = drone.landing_power(0.0);
-    const double cruise_from_depot = drone.cruise_power(0.0);
-
-    const double energy =
-        (landing_from_depot + drone.landing_power(dem)) * landing
-        + drone.cruise_power(dem) * drone.cruise_time(cfg.drone_distances[customer][0])
-        + (takeoff_from_depot + drone.takeoff_power(dem)) * takeoff
-        + cruise_from_depot * drone.cruise_time(cfg.drone_distances[0][customer]);
-
-    return energy <= drone.battery();
-}
-
-static bool is_drone_route_feasible(const Config &cfg, const std::vector<int> &route) {
-    if (route.empty()) {
-        return true;
-    }
-
-    const auto &drone = cfg.drone;
-    const double total_demand = std::accumulate(
-        route.begin(), route.end(), 0.0,
-        [&](double acc, int customer) {
-            return acc + customer_demand(cfg, static_cast<std::size_t>(customer));
-        });
-
-    if (total_demand > drone.capacity()) {
-        return false;
-    }
-
-    double cruise_distance = cfg.drone_distances[0][route.front()];
-    for (std::size_t i = 0; i + 1 < route.size(); ++i) {
-        cruise_distance += cfg.drone_distances[route[i]][route[i + 1]];
-    }
-    cruise_distance += cfg.drone_distances[route.back()][0];
-
-    const double total_time = drone.takeoff_time() + drone.cruise_time(cruise_distance) + drone.landing_time();
-    if (total_time > drone.fixed_time()) {
-        return false;
-    }
-
-    const double takeoff_from_depot = drone.takeoff_power(0.0);
-    const double landing_from_depot = drone.landing_power(0.0);
-
-    double energy = (takeoff_from_depot + drone.takeoff_power(total_demand)) * drone.takeoff_time();
-    double payload = total_demand;
-    int prev = 0;
-
-    for (int customer : route) {
-        const double distance = cfg.drone_distances[prev][customer];
-        energy += drone.cruise_power(payload) * drone.cruise_time(distance);
-        payload -= customer_demand(cfg, static_cast<std::size_t>(customer));
-        prev = customer;
-    }
-
-    energy += drone.cruise_power(payload) * drone.cruise_time(cfg.drone_distances[prev][0]);
-    energy += (landing_from_depot + drone.landing_power(payload)) * drone.landing_time();
-
-    return energy <= drone.battery();
-}
 
 static common::Trip route_to_trip(const std::vector<int> &route) {
     common::Trip trip;
@@ -121,185 +43,508 @@ static common::Trip route_to_trip(const std::vector<int> &route) {
     return trip;
 }
 
-// Random each customer to a random feasible vehicle, then devide it into trips in the next functions
-static std::vector<std::vector<int>> build_vehicle_customers(const Config &cfg, std::mt19937_64 &rng) {
-    std::vector<std::vector<int>> vehicle_customers(cfg.trucks_count + cfg.drones_count);
-
-    for (std::size_t customer = 1; customer <= cfg.customers_count; ++customer) {
-        std::vector<std::size_t> candidates;
-        candidates.reserve(cfg.trucks_count + cfg.drones_count);
-
-        for (std::size_t truck = 0; truck < cfg.trucks_count; ++truck) {
-            if (is_truck_customer_feasible(cfg, customer)) {
-                candidates.push_back(truck);
-            }
-        }
-
-        if (is_drone_customer_feasible(cfg, customer)) {
-            for (std::size_t drone = 0; drone < cfg.drones_count; ++drone) {
-                candidates.push_back(cfg.trucks_count + drone);
-            }
-        }
-
-        if (candidates.empty()) {
-            throw std::runtime_error("No feasible vehicle available for customer " + std::to_string(customer));
-        }
-
-        std::uniform_int_distribution<std::size_t> pick(0, candidates.size() - 1);
-        vehicle_customers[candidates[pick(rng)]].push_back(static_cast<int>(customer));
+static double route_distance(const std::vector<std::vector<double>>& distances, const std::vector<int>& route) {
+    if (route.empty()) {
+        return 0.0;
     }
 
-    return vehicle_customers;
+    double total_distance = 0.0;
+    int prev = 0;
+    for (int customer : route) {
+        total_distance += distances[prev][customer];
+        prev = customer;
+    }
+    total_distance += distances[prev][0];
+    return total_distance;
 }
 
-// Devide customers assigned to a truck into trips
-static common::EliteElement build_truck_element(const Config &cfg, std::size_t vehicle_number, std::vector<int> &customers, std::mt19937_64 &rng) {
-    std::shuffle(customers.begin(), customers.end(), rng);
+static double truck_route_time(const Config& cfg, const std::vector<int>& route) {
+    if (route.empty()) {
+        return 0.0;
+    }
+    if (cfg.truck.speed <= 0.0) {
+        return std::numeric_limits<double>::infinity();
+    }
+    return route_distance(cfg.truck_distances, route) / cfg.truck.speed;
+}
 
-    common::EliteElement element;
-    element.type = 0;
-    element.vehicle_number = static_cast<int>(vehicle_number);
-    if (customers.empty()) {
-        return element;
+static double drone_route_time(const Config& cfg, const std::vector<int>& route) {
+    if (route.empty()) {
+        return 0.0;
+    }
+    return cfg.drone.takeoff_time() + cfg.drone.cruise_time(route_distance(cfg.drone_distances, route)) + cfg.drone.landing_time();
+}
+
+static double route_demand(const Config& cfg, const std::vector<int>& route) {
+    return std::accumulate(
+        route.begin(), route.end(), 0.0,
+        [&](double acc, int customer) {
+            return acc + customer_demand(cfg, static_cast<std::size_t>(customer));
+        });
+}
+
+// Local helper: compute solution metrics similar to sequence's Solution::make
+struct LocalSolutionMetrics {
+    bool feasible;
+    std::vector<double> truck_working_time;
+    std::vector<double> drone_working_time;
+    double energy_violation;
+    double capacity_violation;
+    double waiting_time_violation;
+    double fixed_time_violation;
+};
+
+static LocalSolutionMetrics build_local_solution(const Config &cfg,
+    const std::vector<std::vector<std::vector<int>>> &tr,
+    const std::vector<std::vector<std::vector<int>>> &dr)
+{
+    LocalSolutionMetrics res;
+    res.truck_working_time.assign(tr.size(), 0.0);
+    res.drone_working_time.assign(dr.size(), 0.0);
+    double working_time = 0.0;
+    double energy_violation = 0.0;
+    double capacity_violation = 0.0;
+    double waiting_time_violation = 0.0;
+    double fixed_time_violation = 0.0;
+
+    // Trucks
+    for (size_t t = 0; t < tr.size(); ++t) {
+        double sum = 0.0;
+        for (const auto &route : tr[t]) {
+            double wt = truck_route_time(cfg, route);
+            sum += wt;
+            double capv = std::max(0.0, route_demand(cfg, route) - cfg.truck.capacity);
+            capacity_violation += capv / cfg.truck.capacity;
+
+            double accum = 0.0;
+            int prev = 0;
+            for (int customer : route) {
+                accum += cfg.truck_distances[prev][customer] / cfg.truck.speed;
+                waiting_time_violation += std::max(0.0, wt - accum - cfg.waiting_time_limit);
+                prev = customer;
+            }
+        }
+        res.truck_working_time[t] = sum;
+        working_time = std::max(working_time, sum);
     }
 
-    std::vector<double> trip_loads;
+    // Drones
+    for (size_t d_idx = 0; d_idx < dr.size(); ++d_idx) {
+        double sum = 0.0;
+        for (const auto &route : dr[d_idx]) {
+            double wt = drone_route_time(cfg, route);
+            sum += wt;
 
-    for (int customer : customers) {
-        const double demand = customer_demand(cfg, static_cast<std::size_t>(customer));
-        bool placed = false;
+            double payload = 0.0;
+            for (int c : route) payload += customer_demand(cfg, static_cast<std::size_t>(c));
+            capacity_violation += std::max(0.0, payload - cfg.drone.capacity()) / cfg.drone.capacity();
 
-        for (std::size_t ti = 0; ti < element.trips.size(); ++ti) {
-            if (trip_loads[ti] + demand <= cfg.truck.capacity) {
-                auto &trip_customers = element.trips[ti].customers;
-                if (trip_customers.empty()) {
-                    trip_customers[customer] = -1;
+            double takeoff = cfg.drone.takeoff_time();
+            double landing = cfg.drone.landing_time();
+            double time = 0.0;
+            double energy = 0.0;
+            double weight = 0.0;
+            int prev = 0;
+            for (int customer : route) {
+                double cruise = cfg.drone.cruise_time(cfg.drone_distances[prev][customer]);
+                time += takeoff + cruise + landing;
+                energy += cfg.drone.landing_power(weight) * landing
+                       + cfg.drone.takeoff_power(weight) * takeoff
+                       + cfg.drone.cruise_power(weight) * cruise;
+                weight += customer_demand(cfg, static_cast<std::size_t>(customer));
+                waiting_time_violation += std::max(0.0, wt - time - cfg.waiting_time_limit);
+                prev = customer;
+            }
+            energy_violation += std::max(0.0, energy - cfg.drone.battery());
+            fixed_time_violation += std::max(0.0, wt - cfg.drone.fixed_time());
+        }
+        res.drone_working_time[d_idx] = sum;
+        working_time = std::max(working_time, sum);
+    }
+
+    energy_violation /= std::max(1.0, cfg.drone.battery());
+    waiting_time_violation /= std::max(1.0, cfg.waiting_time_limit);
+    fixed_time_violation /= std::max(1.0, cfg.drone.fixed_time());
+
+    res.energy_violation = energy_violation;
+    res.capacity_violation = capacity_violation;
+    res.waiting_time_violation = waiting_time_violation;
+    res.fixed_time_violation = fixed_time_violation;
+    res.feasible = (energy_violation == 0.0 && capacity_violation == 0.0 && waiting_time_violation == 0.0 && fixed_time_violation == 0.0);
+    return res;
+}
+
+static common::Elite build_initial_elite(const Config& cfg) {
+    std::vector<std::size_t> index;
+    index.reserve(cfg.customers_count);
+    for (std::size_t i = 1; i <= cfg.customers_count; ++i) {
+        index.push_back(i);
+    }
+
+    auto clusters = clusterize(index, std::max<std::size_t>(1, cfg.trucks_count));
+
+    std::vector<std::vector<std::vector<int>>> truck_routes(cfg.trucks_count);
+    std::vector<std::vector<std::vector<int>>> drone_routes(cfg.drones_count);
+
+    std::vector<std::size_t> clusters_mapping(cfg.customers_count + 1, 0);
+    for (std::size_t ci = 0; ci < clusters.size(); ++ci) {
+        for (std::size_t c : clusters[ci]) {
+            clusters_mapping[c] = ci;
+        }
+    }
+
+    // Local builder that replicates Solution::make metrics (feasibility and working times)
+    auto build_local_solution = [&](const std::vector<std::vector<std::vector<int>>>& tr,
+                                    const std::vector<std::vector<std::vector<int>>>& dr) {
+        struct LocalSol {
+            bool feasible;
+            std::vector<double> truck_working_time;
+            std::vector<double> drone_working_time;
+            double energy_violation;
+            double capacity_violation;
+            double waiting_time_violation;
+            double fixed_time_violation;
+        } res;
+
+        res.truck_working_time.assign(tr.size(), 0.0);
+        res.drone_working_time.assign(dr.size(), 0.0);
+        double working_time = 0.0;
+        double energy_violation = 0.0;
+        double capacity_violation = 0.0;
+        double waiting_time_violation = 0.0;
+        double fixed_time_violation = 0.0;
+
+        // Trucks
+        for (size_t t = 0; t < tr.size(); ++t) {
+            double sum = 0.0;
+            for (const auto &route : tr[t]) {
+                double wt = truck_route_time(cfg, route);
+                sum += wt;
+                double capv = std::max(0.0, route_demand(cfg, route) - cfg.truck.capacity);
+                capacity_violation += capv / cfg.truck.capacity;
+
+                double accum = 0.0;
+                int prev = 0;
+                for (int customer : route) {
+                    accum += cfg.truck_distances[prev][customer] / cfg.truck.speed;
+                    waiting_time_violation += std::max(0.0, wt - accum - cfg.waiting_time_limit);
+                    prev = customer;
+                }
+            }
+            res.truck_working_time[t] = sum;
+            working_time = std::max(working_time, sum);
+        }
+
+        // Drones
+        for (size_t d_idx = 0; d_idx < dr.size(); ++d_idx) {
+            double sum = 0.0;
+            for (const auto &route : dr[d_idx]) {
+                double wt = drone_route_time(cfg, route);
+                sum += wt;
+
+                double payload = 0.0;
+                for (int c : route) payload += customer_demand(cfg, static_cast<std::size_t>(c));
+                capacity_violation += std::max(0.0, payload - cfg.drone.capacity()) / cfg.drone.capacity();
+
+                double takeoff = cfg.drone.takeoff_time();
+                double landing = cfg.drone.landing_time();
+                double time = 0.0;
+                double energy = 0.0;
+                double weight = 0.0;
+                int prev = 0;
+                for (int customer : route) {
+                    double cruise = cfg.drone.cruise_time(cfg.drone_distances[prev][customer]);
+                    time += takeoff + cruise + landing;
+                    energy += cfg.drone.landing_power(weight) * landing
+                           + cfg.drone.takeoff_power(weight) * takeoff
+                           + cfg.drone.cruise_power(weight) * cruise;
+                    weight += customer_demand(cfg, static_cast<std::size_t>(customer));
+                    waiting_time_violation += std::max(0.0, wt - time - cfg.waiting_time_limit);
+                    prev = customer;
+                }
+                energy_violation += std::max(0.0, energy - cfg.drone.battery());
+                fixed_time_violation += std::max(0.0, wt - cfg.drone.fixed_time());
+            }
+            res.drone_working_time[d_idx] = sum;
+            working_time = std::max(working_time, sum);
+        }
+
+        energy_violation /= std::max(1.0, cfg.drone.battery());
+        waiting_time_violation /= std::max(1.0, cfg.waiting_time_limit);
+        fixed_time_violation /= std::max(1.0, cfg.drone.fixed_time());
+
+        res.energy_violation = energy_violation;
+        res.capacity_violation = capacity_violation;
+        res.waiting_time_violation = waiting_time_violation;
+        res.fixed_time_violation = fixed_time_violation;
+        res.feasible = (energy_violation == 0.0 && capacity_violation == 0.0 && waiting_time_violation == 0.0 && fixed_time_violation == 0.0);
+        return res;
+    };
+
+    auto feasible_check = [&](const std::vector<std::vector<std::vector<int>>>& tr,
+                              const std::vector<std::vector<std::vector<int>>>& dr) {
+        return build_local_solution(tr, dr).feasible;
+    };
+
+    std::vector<bool> truckable(cfg.customers_count + 1, false);
+    std::vector<bool> dronable_local(cfg.customers_count + 1, false);
+    truckable[0] = true;
+    dronable_local[0] = true;
+
+    if (cfg.trucks_count > 0) {
+        for (std::size_t c = 1; c <= cfg.customers_count; ++c) {
+            truck_routes[0].push_back({static_cast<int>(c)});
+            truckable[c] = feasible_check(truck_routes, drone_routes);
+            truck_routes[0].pop_back();
+        }
+    }
+    if (cfg.drones_count > 0) {
+        for (std::size_t c = 1; c <= cfg.customers_count; ++c) {
+            if (cfg.dronable[c]) {
+                drone_routes[0].push_back({static_cast<int>(c)});
+                dronable_local[c] = feasible_check(truck_routes, drone_routes);
+                drone_routes[0].pop_back();
+            }
+        }
+    }
+
+    for (std::size_t c = 1; c <= cfg.customers_count; ++c) {
+        if (!truckable[c] && !dronable_local[c]) {
+            throw std::runtime_error("Customer " + std::to_string(c) +
+                " cannot be served by neither trucks nor drones");
+        }
+    }
+
+    struct State {
+        double working_time;
+        std::size_t vehicle;
+        std::size_t parent;
+        std::size_t index;
+        bool is_truck;
+        bool operator>(const State& o) const {
+            return working_time > o.working_time;
+        }
+    };
+
+    std::priority_queue<State, std::vector<State>, std::greater<State>> queue;
+
+    std::mt19937_64 rng;
+    if (cfg.seed) rng.seed(*cfg.seed);
+    else          rng.seed(std::random_device{}());
+
+    for (std::size_t ci = 0; ci < clusters.size(); ++ci) {
+        auto& cluster = clusters[ci];
+        if (cluster.empty()) continue;
+
+        std::shuffle(cluster.begin(), cluster.end(), rng);
+        for (std::size_t c : cluster) {
+            if (truckable[c]) {
+                queue.push({0.0, ci, 0, cluster.front(), true});
+                break;
+            }
+        }
+
+        std::sort(cluster.begin(), cluster.end(), [&](std::size_t a, std::size_t b) {
+            return cfg.drone_distances[0][a] < cfg.drone_distances[0][b];
+        });
+        for (std::size_t c : cluster) {
+            if (dronable_local[c]) {
+                queue.push({0.0, ci, 0, cluster[0], false});
+                break;
+            }
+        }
+    }
+
+    std::set<std::size_t> global_set;
+    for (std::size_t i = 1; i <= cfg.customers_count; ++i) global_set.insert(i);
+
+    auto truck_working_time = [&](std::size_t vehicle) {
+        double sum = 0.0;
+        for (const auto& route : truck_routes[vehicle]) {
+            sum += truck_route_time(cfg, route);
+        }
+        return sum;
+    };
+
+    auto drone_working_time = [&](std::size_t vehicle) {
+        double sum = 0.0;
+        for (const auto& route : drone_routes[vehicle]) {
+            sum += drone_route_time(cfg, route);
+        }
+        return sum;
+    };
+
+    auto truck_next = [&](std::size_t parent, std::size_t vehicle) {
+        double best_d = std::numeric_limits<double>::infinity();
+        std::size_t best_c = 0;
+        const auto& cl = clusters[clusters_mapping[parent]];
+        for (std::size_t c : cl) {
+            if (truckable[c] && global_set.count(c) && cfg.truck_distances[parent][c] < best_d) {
+                best_d = cfg.truck_distances[parent][c];
+                best_c = c;
+            }
+        }
+        if (best_c == 0) {
+            for (std::size_t c : global_set) {
+                if (truckable[c] && cfg.truck_distances[parent][c] < best_d) {
+                    best_d = cfg.truck_distances[parent][c];
+                    best_c = c;
+                }
+            }
+        }
+        if (best_c != 0) {
+            // compute working time using local metrics
+            double wt = 0.0;
+            for (const auto& route : truck_routes[vehicle]) wt += truck_route_time(cfg, route);
+            State next_state{wt, vehicle, parent, best_c, true};
+            queue.push(next_state);
+        }
+    };
+
+    auto drone_next = [&](std::size_t parent, std::size_t vehicle) {
+        double best_d = std::numeric_limits<double>::infinity();
+        std::size_t best_c = 0;
+        const auto& cl = clusters[clusters_mapping[parent]];
+        for (std::size_t c : cl) {
+            if (dronable_local[c] && global_set.count(c) && cfg.drone_distances[parent][c] < best_d) {
+                best_d = cfg.drone_distances[parent][c];
+                best_c = c;
+            }
+        }
+        if (best_c == 0) {
+            for (std::size_t c : global_set) {
+                if (dronable_local[c] && cfg.drone_distances[parent][c] < best_d) {
+                    best_d = cfg.drone_distances[parent][c];
+                    best_c = c;
+                }
+            }
+        }
+        if (best_c != 0) {
+            double wt = 0.0;
+            for (const auto& route : drone_routes[vehicle]) wt += drone_route_time(cfg, route);
+            State next_state{wt, vehicle, parent, best_c, false};
+            queue.push(next_state);
+        }
+    };
+
+    while (!global_set.empty()) {
+        if (queue.empty()) {
+            throw std::runtime_error("Cannot construct initial solution – unservable customers remain");
+        }
+
+        State packed = queue.top();
+        queue.pop();
+        std::size_t v = packed.vehicle;
+
+        auto& cl = clusters[clusters_mapping[packed.index]];
+        auto it = std::find(cl.begin(), cl.end(), packed.index);
+
+        if (it != cl.end()) {
+            if (packed.is_truck) {
+                if (packed.parent == 0) {
+                    truck_routes[v].push_back({static_cast<int>(packed.index)});
                 } else {
-                    int tail = trip_customers.begin()->first;
-                    while (trip_customers[tail] != -1) {
-                        tail = trip_customers[tail];
+                    truck_routes[v].back().push_back(static_cast<int>(packed.index));
+                }
+            } else {
+                if (packed.parent == 0) {
+                    drone_routes[v].push_back({static_cast<int>(packed.index)});
+                } else {
+                    drone_routes[v].back().push_back(static_cast<int>(packed.index));
+                }
+            }
+
+            if (feasible_check(truck_routes, drone_routes)) {
+                cl.erase(it);
+                global_set.erase(packed.index);
+
+                if (packed.is_truck) {
+                    truck_next(packed.index, v);
+                } else {
+                    drone_next(cfg.single_drone_route ? 0 : packed.index, v);
+                }
+            } else {
+                if (packed.is_truck) {
+                    if (packed.parent == 0) {
+                        truck_routes[v].pop_back();
+                    } else {
+                        truck_routes[v].back().pop_back();
                     }
-                    trip_customers[tail] = customer;
-                    trip_customers[customer] = -1;
-                }
-                trip_loads[ti] += demand;
-                placed = true;
-                break;
-            }
-        }
-
-        if (!placed) {
-            common::Trip trip;
-            trip.customers[customer] = -1;
-            element.trips.push_back(std::move(trip));
-            trip_loads.push_back(demand);
-        }
-    }
-
-    return element;
-}
-
-// Devide customers assigned to a drone into trips
-static common::EliteElement build_drone_element(const Config &cfg, std::size_t vehicle_number, std::vector<int> &customers, std::mt19937_64 &rng) {
-    std::shuffle(customers.begin(), customers.end(), rng);
-
-    common::EliteElement element;
-    element.type = 1;
-    element.vehicle_number = static_cast<int>(vehicle_number);
-
-    std::vector<std::vector<int>> routes;
-
-    for (int customer : customers) {
-        bool placed = false;
-
-        std::vector<std::size_t> trip_order(routes.size());
-        for (std::size_t i = 0; i < trip_order.size(); ++i) {
-            trip_order[i] = i;
-        }
-        std::shuffle(trip_order.begin(), trip_order.end(), rng);
-
-        for (std::size_t ti : trip_order) {
-            auto candidate = routes[ti];
-
-            std::vector<std::size_t> positions(candidate.size() + 1);
-            for (std::size_t p = 0; p < positions.size(); ++p) {
-                positions[p] = p;
-            }
-            std::shuffle(positions.begin(), positions.end(), rng);
-
-            bool inserted = false;
-            for (std::size_t pos : positions) {
-                auto trial = candidate;
-                trial.insert(trial.begin() + static_cast<std::vector<int>::difference_type>(pos), customer);
-                if (is_drone_route_feasible(cfg, trial)) {
-                    routes[ti] = std::move(trial);
-                    placed = true;
-                    inserted = true;
-                    break;
+                    if (!cfg.single_truck_route) {
+                        truck_next(0, v);
+                    }
+                } else {
+                    if (packed.parent == 0) {
+                        drone_routes[v].pop_back();
+                    } else {
+                        drone_routes[v].back().pop_back();
+                    }
+                    drone_next(0, v);
                 }
             }
+        } else {
+            if (packed.is_truck) {
+                truck_next(packed.parent, v);
+            } else {
+                drone_next(cfg.single_drone_route ? 0 : packed.parent, v);
+            }
+        }
+    }
 
-            if (inserted) {
-                break;
+    if (cfg.drones_count > 0) {
+        std::vector<std::vector<int>> all_routes;
+        for (auto& routes : drone_routes) {
+            for (auto& route : routes) {
+                all_routes.push_back(route);
             }
         }
 
-        if (!placed) {
-            std::vector<int> route{customer};
-            if (!is_drone_route_feasible(cfg, route)) {
-                throw std::runtime_error("Infeasible drone customer in random elite: " + std::to_string(customer));
-            }
-            routes.push_back(std::move(route));
+        std::sort(all_routes.begin(), all_routes.end(), [&](const auto& a, const auto& b) {
+            return drone_route_time(cfg, a) > drone_route_time(cfg, b);
+        });
+
+        drone_routes.assign(cfg.drones_count, {});
+        std::vector<double> wt(cfg.drones_count, 0.0);
+        for (const auto& route : all_routes) {
+            std::size_t best = std::min_element(wt.begin(), wt.end()) - wt.begin();
+            drone_routes[best].push_back(route);
+            wt[best] += drone_route_time(cfg, route);
         }
+    } else {
+        drone_routes.clear();
     }
-
-    element.trips.reserve(routes.size());
-    for (const auto &route : routes) {
-        element.trips.push_back(route_to_trip(route));
-    }
-
-    return element;
-}
-
-static common::EliteElement build_element(const Config &cfg, int type, std::size_t vehicle_number, std::vector<int> &customers, std::mt19937_64 &rng) {
-    if (type == 0) {
-        return build_truck_element(cfg, vehicle_number, customers, rng);
-    }
-    if (type == 1) {
-        return build_drone_element(cfg, vehicle_number, customers, rng);
-    }
-
-    throw std::runtime_error("Unsupported vehicle type in build_element");
-}
-
-static common::Elite build_random_elite(const Config &cfg, std::mt19937_64 &rng) {
-    auto vehicle_customers = build_vehicle_customers(cfg, rng);
 
     common::Elite elite;
     elite.elements.reserve(cfg.trucks_count + cfg.drones_count);
 
     for (std::size_t truck = 0; truck < cfg.trucks_count; ++truck) {
-        elite.elements.push_back(build_element(cfg, 0, truck, vehicle_customers[truck], rng));
+        common::EliteElement element;
+        element.type = 0;
+        element.vehicle_number = static_cast<int>(truck);
+        for (const auto& route : truck_routes[truck]) {
+            element.trips.push_back(route_to_trip(route));
+        }
+        elite.elements.push_back(std::move(element));
     }
 
     for (std::size_t drone = 0; drone < cfg.drones_count; ++drone) {
-        elite.elements.push_back(build_element(cfg, 1, drone, vehicle_customers[cfg.trucks_count + drone], rng));
+        common::EliteElement element;
+        element.type = 1;
+        element.vehicle_number = static_cast<int>(drone);
+        for (const auto& route : drone_routes[drone]) {
+            element.trips.push_back(route_to_trip(route));
+        }
+        elite.elements.push_back(std::move(element));
     }
 
     return elite;
 }
 
-static common::Elite random_elite() {
-    const Config &cfg = global_config();
-    std::mt19937_64 rng = make_rng(cfg);
-    return build_random_elite(cfg, rng);
-}
-
 void worker(int rank) {
     const Config &cfg = global_config();
     std::mt19937_64 rng = make_rng(cfg);
-    
-    common::Elite elite = random_elite();
+
+    common::Elite elite = build_initial_elite(cfg);
     elite.worker_rank = rank;
     
     double best_cost = solutions::compute_elite_cost(cfg, elite);
@@ -368,33 +613,26 @@ void worker(int rank) {
             if (++pull_count > STOP_AFTER_PULLS) {
                 break;
             }
-            
-            if (pull_count > 0 && pull_count % RANDOM_RESTART_INTERVAL == 0) {
-                elite = build_random_elite(cfg, rng);
-                elite.worker_rank = rank;
+
+            int req = rank;
+            MPI_Send(&req, 1, MPI_INT, common::MASTER_RANK, common::TAG_PULL_ELITE_WORKER_REQUEST, MPI_COMM_WORLD);
+
+            int n;
+            MPI_Recv(&n, 1, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            std::vector<int> buf(n);
+            MPI_Recv(buf.data(), n, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            common::Elite pulled = common::unpack_elite(buf);
+            pulled.worker_rank = rank;
+            elite = std::move(pulled);
+
+            double pulled_cost = solutions::compute_elite_cost(cfg, elite);
+            if (pulled_cost < best_cost) {
+                best_cost = pulled_cost;
                 no_improve_count = 0;
-                std::cerr << "[Worker " << rank << "] Random restart (pull " << pull_count << ").\n";
-            } else {
-                int req = rank;
-                MPI_Send(&req, 1, MPI_INT, common::MASTER_RANK, common::TAG_PULL_ELITE_WORKER_REQUEST, MPI_COMM_WORLD);
-
-                int n;
-                MPI_Recv(&n, 1, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-                std::vector<int> buf(n);
-                MPI_Recv(buf.data(), n, MPI_INT, common::MASTER_RANK, common::TAG_ELITE_MASTER_SEND_PULLED, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-                common::Elite pulled = common::unpack_elite(buf);
-                pulled.worker_rank = rank;
-                elite = std::move(pulled);
-
-                double pulled_cost = solutions::compute_elite_cost(cfg, elite);
-                if (pulled_cost < best_cost) {
-                    best_cost = pulled_cost;
-                    no_improve_count = 0;
-                }
-                std::cerr << "[Worker " << rank << "] Pulled elite with cost " << pulled_cost << " (pull " << pull_count << ").\n";
             }
+            std::cerr << "[Worker " << rank << "] Pulled elite with cost " << pulled_cost << " (pull " << pull_count << ").\n";
         }
     }
 

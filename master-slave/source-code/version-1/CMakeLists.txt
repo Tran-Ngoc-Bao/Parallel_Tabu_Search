@@ -26,6 +26,7 @@ find_package(OpenMP REQUIRED)
 add_executable(master_slave_v1
     src/main.cpp
     src/common.cpp
+    src/clusterize.cpp
     src/input.cpp
     src/config.cpp
     src/master.cpp
