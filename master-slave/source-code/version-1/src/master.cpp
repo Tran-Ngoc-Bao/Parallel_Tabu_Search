@@ -13,7 +13,7 @@
 #include <sstream>
 #include <mpi.h>
 
-const int ELITE_POOL_SIZE = 6;
+const int ELITE_POOL_SIZE = 10;
 
 static void update_global_best_elite(const common::Elite &candidate,
                                      const Config &cfg,

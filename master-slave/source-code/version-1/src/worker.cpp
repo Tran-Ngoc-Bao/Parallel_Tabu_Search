@@ -33,7 +33,6 @@ static double customer_demand(const Config &cfg, std::size_t customer) {
     return cfg.demands[customer];
 }
 
-
 static common::Trip route_to_trip(const std::vector<int> &route) {
     common::Trip trip;
     for (std::size_t i = 0; i < route.size(); ++i) {
@@ -82,17 +81,6 @@ static double route_demand(const Config& cfg, const std::vector<int>& route) {
             return acc + customer_demand(cfg, static_cast<std::size_t>(customer));
         });
 }
-
-// Local helper: compute solution metrics similar to sequence's Solution::make
-struct LocalSolutionMetrics {
-    bool feasible;
-    std::vector<double> truck_working_time;
-    std::vector<double> drone_working_time;
-    double energy_violation;
-    double capacity_violation;
-    double waiting_time_violation;
-    double fixed_time_violation;
-};
 
 static LocalSolutionMetrics build_local_solution(const Config &cfg,
     const std::vector<std::vector<std::vector<int>>> &tr,
@@ -193,97 +181,9 @@ static common::Elite build_initial_elite(const Config& cfg) {
         }
     }
 
-    // Local builder that replicates Solution::make metrics (feasibility and working times)
-    auto build_local_solution = [&](const std::vector<std::vector<std::vector<int>>>& tr,
-                                    const std::vector<std::vector<std::vector<int>>>& dr) {
-        struct LocalSol {
-            bool feasible;
-            std::vector<double> truck_working_time;
-            std::vector<double> drone_working_time;
-            double energy_violation;
-            double capacity_violation;
-            double waiting_time_violation;
-            double fixed_time_violation;
-        } res;
-
-        res.truck_working_time.assign(tr.size(), 0.0);
-        res.drone_working_time.assign(dr.size(), 0.0);
-        double working_time = 0.0;
-        double energy_violation = 0.0;
-        double capacity_violation = 0.0;
-        double waiting_time_violation = 0.0;
-        double fixed_time_violation = 0.0;
-
-        // Trucks
-        for (size_t t = 0; t < tr.size(); ++t) {
-            double sum = 0.0;
-            for (const auto &route : tr[t]) {
-                double wt = truck_route_time(cfg, route);
-                sum += wt;
-                double capv = std::max(0.0, route_demand(cfg, route) - cfg.truck.capacity);
-                capacity_violation += capv / cfg.truck.capacity;
-
-                double accum = 0.0;
-                int prev = 0;
-                for (int customer : route) {
-                    accum += cfg.truck_distances[prev][customer] / cfg.truck.speed;
-                    waiting_time_violation += std::max(0.0, wt - accum - cfg.waiting_time_limit);
-                    prev = customer;
-                }
-            }
-            res.truck_working_time[t] = sum;
-            working_time = std::max(working_time, sum);
-        }
-
-        // Drones
-        for (size_t d_idx = 0; d_idx < dr.size(); ++d_idx) {
-            double sum = 0.0;
-            for (const auto &route : dr[d_idx]) {
-                double wt = drone_route_time(cfg, route);
-                sum += wt;
-
-                double payload = 0.0;
-                for (int c : route) payload += customer_demand(cfg, static_cast<std::size_t>(c));
-                capacity_violation += std::max(0.0, payload - cfg.drone.capacity()) / cfg.drone.capacity();
-
-                double takeoff = cfg.drone.takeoff_time();
-                double landing = cfg.drone.landing_time();
-                double time = 0.0;
-                double energy = 0.0;
-                double weight = 0.0;
-                int prev = 0;
-                for (int customer : route) {
-                    double cruise = cfg.drone.cruise_time(cfg.drone_distances[prev][customer]);
-                    time += takeoff + cruise + landing;
-                    energy += cfg.drone.landing_power(weight) * landing
-                           + cfg.drone.takeoff_power(weight) * takeoff
-                           + cfg.drone.cruise_power(weight) * cruise;
-                    weight += customer_demand(cfg, static_cast<std::size_t>(customer));
-                    waiting_time_violation += std::max(0.0, wt - time - cfg.waiting_time_limit);
-                    prev = customer;
-                }
-                energy_violation += std::max(0.0, energy - cfg.drone.battery());
-                fixed_time_violation += std::max(0.0, wt - cfg.drone.fixed_time());
-            }
-            res.drone_working_time[d_idx] = sum;
-            working_time = std::max(working_time, sum);
-        }
-
-        energy_violation /= std::max(1.0, cfg.drone.battery());
-        waiting_time_violation /= std::max(1.0, cfg.waiting_time_limit);
-        fixed_time_violation /= std::max(1.0, cfg.drone.fixed_time());
-
-        res.energy_violation = energy_violation;
-        res.capacity_violation = capacity_violation;
-        res.waiting_time_violation = waiting_time_violation;
-        res.fixed_time_violation = fixed_time_violation;
-        res.feasible = (energy_violation == 0.0 && capacity_violation == 0.0 && waiting_time_violation == 0.0 && fixed_time_violation == 0.0);
-        return res;
-    };
-
     auto feasible_check = [&](const std::vector<std::vector<std::vector<int>>>& tr,
                               const std::vector<std::vector<std::vector<int>>>& dr) {
-        return build_local_solution(tr, dr).feasible;
+        return build_local_solution(cfg, tr, dr).feasible;
     };
 
     std::vector<bool> truckable(cfg.customers_count + 1, false);
@@ -358,22 +258,6 @@ static common::Elite build_initial_elite(const Config& cfg) {
     std::set<std::size_t> global_set;
     for (std::size_t i = 1; i <= cfg.customers_count; ++i) global_set.insert(i);
 
-    auto truck_working_time = [&](std::size_t vehicle) {
-        double sum = 0.0;
-        for (const auto& route : truck_routes[vehicle]) {
-            sum += truck_route_time(cfg, route);
-        }
-        return sum;
-    };
-
-    auto drone_working_time = [&](std::size_t vehicle) {
-        double sum = 0.0;
-        for (const auto& route : drone_routes[vehicle]) {
-            sum += drone_route_time(cfg, route);
-        }
-        return sum;
-    };
-
     auto truck_next = [&](std::size_t parent, std::size_t vehicle) {
         double best_d = std::numeric_limits<double>::infinity();
         std::size_t best_c = 0;
@@ -393,9 +277,7 @@ static common::Elite build_initial_elite(const Config& cfg) {
             }
         }
         if (best_c != 0) {
-            // compute working time using local metrics
-            double wt = 0.0;
-            for (const auto& route : truck_routes[vehicle]) wt += truck_route_time(cfg, route);
+            double wt = build_local_solution(cfg, truck_routes, drone_routes).truck_working_time[vehicle];
             State next_state{wt, vehicle, parent, best_c, true};
             queue.push(next_state);
         }
@@ -420,8 +302,7 @@ static common::Elite build_initial_elite(const Config& cfg) {
             }
         }
         if (best_c != 0) {
-            double wt = 0.0;
-            for (const auto& route : drone_routes[vehicle]) wt += drone_route_time(cfg, route);
+            double wt = build_local_solution(cfg, truck_routes, drone_routes).drone_working_time[vehicle];
             State next_state{wt, vehicle, parent, best_c, false};
             queue.push(next_state);
         }
