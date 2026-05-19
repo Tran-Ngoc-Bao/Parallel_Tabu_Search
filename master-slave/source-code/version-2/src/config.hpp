@@ -149,6 +149,7 @@ struct Config {
     std::optional<std::size_t> fix_iteration       = std::nullopt;
     double               reset_after_factor        = 125.0;
     std::size_t          max_elite_size            = 0;
+    double               elite_pool_factor         = 0.1;
     double               penalty_exponent          = 0.5;
     bool                 single_truck_route        = false;
     bool                 single_drone_route        = false;
@@ -158,6 +159,8 @@ struct Config {
     bool                 dry_run                   = false;
     std::string          extra                     = "";
     std::optional<uint64_t> seed                   = std::nullopt;
+    double          diversity_weight_edge          = 0.5;
+    double          diversity_weight_assignment    = 0.5;
 };
 
 // Distance matrix helper
