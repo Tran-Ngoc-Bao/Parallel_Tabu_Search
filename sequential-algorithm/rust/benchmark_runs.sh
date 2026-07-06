@@ -98,7 +98,7 @@ STD_INFO="$(awk -F, '
 
 COMBINED_STD_RESULT="${STD_INFO%%,*}"
 COMBINED_STD_TIME="${STD_INFO#*,}"
-CV_PERCENT="$(awk -v std="${COMBINED_STD_RESULT}" -v avg="${AVG_RESULT}" 'BEGIN {printf "%.6f", (avg+0)>0 ? std/avg*100 : 0}')"
+CV_PERCENT="$(awk -v std="${COMBINED_STD_RESULT}" -v avg="${AVG_RESULT}" 'BEGIN { cv = (avg+0>0) ? std/avg*100 : 0; printf "%.6f", cv }')"
 
 {
     echo "combined_std_result=${COMBINED_STD_RESULT}"

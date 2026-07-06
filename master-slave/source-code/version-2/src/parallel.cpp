@@ -312,16 +312,15 @@ struct ElitePool {
         };
 
         auto pick_rank_based = [&]() -> const Solution& {
-            std::vector<std::size_t> sorted = candidates;
-            std::sort(sorted.begin(), sorted.end(), [&](std::size_t lhs, std::size_t rhs) {
-                return solutions[lhs].sol.cost() < solutions[rhs].sol.cost();
-            });
-            std::vector<double> weights(sorted.size(), 0.0);
-            for (std::size_t i = 0; i < sorted.size(); ++i) {
-                weights[i] = 1.0 / static_cast<double>(i + 1);
-            }
+            double min_cost = solutions[candidates.front()].sol.cost();
+            for (std::size_t idx : candidates)
+                min_cost = std::min(min_cost, solutions[idx].sol.cost());
+            std::vector<double> weights;
+            weights.reserve(candidates.size());
+            for (std::size_t idx : candidates)
+                weights.push_back(1.0 / (solutions[idx].sol.cost() - min_cost + 1.0));
             std::discrete_distribution<std::size_t> dist(weights.begin(), weights.end());
-            return mark_and_return(sorted[dist(rng)]);
+            return mark_and_return(candidates[dist(rng)]);
         };
 
         auto pick_pullcount_based = [&]() -> const Solution& {
