@@ -52,7 +52,6 @@ def plot(times: list[float], costs: list[float], csv_path: str, output: str | No
     ax.scatter(times, costs, color="steelblue", s=1, zorder=3)
     ax.set_xlabel("Time (ms)")
     ax.set_ylabel("Cost (min)")
-    ax.set_title(f"Convergence — {Path(csv_path).stem}")
     margin = (max(costs) - min(costs)) * 0.1 or max(costs) * 0.01
     ax.set_ylim(min(costs) - margin, max(costs) + margin)
     ax.xaxis.set_major_locator(plt.MaxNLocator(nbins=15))
@@ -71,6 +70,52 @@ def plot(times: list[float], costs: list[float], csv_path: str, output: str | No
     print(f"Chart saved to: {out_path}")
 
 
+def plot_elites_per_second(times: list[float], csv_path: str, output: str | None):
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+    except ImportError:
+        print("matplotlib is required. Install with: pip install matplotlib", file=sys.stderr)
+        sys.exit(1)
+
+    # bin each elite event into its 1-second interval
+    bins: dict[int, int] = {}
+    for t in times:
+        sec = int(t / 1000)
+        bins[sec] = bins.get(sec, 0) + 1
+
+    max_sec = max(bins)
+    xs = list(range(max_sec + 1))
+    ys = [bins.get(s, 0) for s in xs]
+
+    if output:
+        out_path = Path(output).with_stem(Path(output).stem + "_elites_per_sec")
+    else:
+        base = default_output_path(csv_path)
+        out_path = base.with_stem(base.stem + "_elites_per_sec")
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    bars = ax.bar(xs, ys, color="steelblue", edgecolor="white", linewidth=0.4)
+
+    # label each bar if count > 0
+    for bar, count in zip(bars, ys):
+        if count > 0:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + max(ys) * 0.01,
+                str(count),
+                ha="center", va="bottom", fontsize=7.5, color="#333333",
+            )
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Elites found")
+    ax.set_xticks(xs)
+    ax.set_xticklabels([str(s) for s in xs], fontsize=8)
+    ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    print(f"Bar chart saved to: {out_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Plot convergence from CSV file")
     parser.add_argument("csv", help="Path to *-convergence.csv file")
@@ -85,6 +130,7 @@ def main():
         sys.exit(1)
 
     plot(times, costs, args.csv, args.output)
+    plot_elites_per_second(times, args.csv, args.output)
 
 
 if __name__ == "__main__":
