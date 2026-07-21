@@ -1,8 +1,8 @@
 I. 11/04/2026
     1. MPI
-        - Chia worker: Mỗi worker chạy 1 thứ tự neihborhood riêng (1-2-3-4-5-6, 6-5-4-3-2-1, ...)
-            (Thời gian chạy mỗi neihborhood chênh lệch nhiều -> OpenMP không song song được để chọn neihborhood tốt nhất cho mỗi lần lặp)
-            -> Không cần tính điểm cho neihborhood sau mỗi lần lặp
+        - Chia worker: Mỗi worker chạy 1 thứ tự neighborhood riêng (1-2-3-4-5-6, 6-5-4-3-2-1, ...)
+            (Thời gian chạy mỗi neighborhood chênh lệch nhiều -> OpenMP không song song được để chọn neighborhood tốt nhất cho mỗi lần lặp)
+            -> Không cần tính điểm cho neighborhood sau mỗi lần lặp
         - Trao đổi: Mỗi worker tự pull lên master để lấy elite solution
             + Sau bao nhiêu lần lặp ? Sau bao nhiêu lần elite solution cục bộ không thay đổi nhiều ?
             + Lấy elite solution ngẫu nhiên không phải chính worker đó gửi lên
@@ -21,7 +21,7 @@ II. Bảng so sánh lần 1
         - Ngẫu nhiên:
             + Các worker cùng 1 seed -> Áp dụng: Mỗi worker 1 seed khác nhau
             + Mỗi worker 1 nghiệm khởi tạo theo chiến lược phân cụm
-            + Thứ tự neihborhood là ngẫu nhiên và cố định với mỗi worker
+            + Thứ tự neighborhood là ngẫu nhiên và cố định với mỗi worker
             + Không có segment -> Pull elite sau số iteration không cải thiện -> Sau số pull elite thì worker dừng
             + Elite pool:
                 Pull elite: chọn ngẫu nhiên từ pool;
@@ -31,7 +31,7 @@ II. Bảng so sánh lần 1
         - Adaptive:
             + Mỗi worker 1 seed khác nhau (Cải tiến hợp lý)
             + Mỗi worker 1 nghiệm khởi tạo theo chiến lược phân cụm
-            + Adaptive neihborhood selection
+            + Adaptive neighborhood selection
             + Pull elite sau số segment không cải thiện -> Reset tabu -> Sau số pull elite thì worker dừng
             + Elite pool:
                 Pull elite: chọn ngẫu nhiên từ pool (trong các elite không phải worker đó gửi lên);
@@ -74,3 +74,12 @@ IV. Bảng so sánh lần 2
         - adaptive-pull-elite-segments: 3, 4, 5
         - elite-pool-factor: 0.02, 0.03, 0.04
         -> Đánh giá xem bộ tham số so sánh đã hợp lý chưa rồi chạy bảng 2, 3, 4, 5
+
+IV. 18/07/2026
+    1. Quan tâm tới best result trước tiên rồi mới tới avg result
+    2. Cách lưu kết quả chi tiết
+    3. Có thể chạy lại "Push elite với tham số độ dài tìm kiếm (với elite_pool_factor)" với customers = 200
+    4. Cải tiến đa dạng tham số chấm điểm neighborhood
+    5. Chỉnh sửa thống kê new best solution:
+        - Thống kê cả baseline bài báo gốc
+        - Có thể thống kê thêm: best solution "=", best solution ">"

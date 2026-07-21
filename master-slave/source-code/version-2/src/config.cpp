@@ -317,6 +317,9 @@ Config build_config(const cli::RunArgs& args)
     cfg.randomize_worker_hyperparams = args.randomize_worker_hyperparams;
     cfg.randomize_worker_adaptive_hyperparams = args.randomize_worker_adaptive_hyperparams;
     cfg.prefer_pulled             = args.prefer_pulled;
+    cfg.save_convergence          = args.save_convergence;
+    cfg.compact_output            = args.compact_output;
+    cfg.run_id                    = args.run_id;
     return cfg;
 }
 
@@ -471,6 +474,9 @@ nlohmann::json config_to_json(const Config& cfg) {
     j["randomize_worker_hyperparams"]   = cfg.randomize_worker_hyperparams;
     j["randomize_worker_adaptive_hyperparams"] = cfg.randomize_worker_adaptive_hyperparams;
     j["prefer_pulled"]             = cfg.prefer_pulled;
+    j["save_convergence"]          = cfg.save_convergence;
+    j["compact_output"]            = cfg.compact_output;
+    j["run_id"]                    = cfg.run_id;
     return j;
 }
 
@@ -629,6 +635,9 @@ Config build_config_from_json(const std::string& json_path)
     cfg.randomize_worker_hyperparams = j.at("randomize_worker_hyperparams").get<bool>();
     cfg.randomize_worker_adaptive_hyperparams = j.at("randomize_worker_adaptive_hyperparams").get<bool>();
     cfg.prefer_pulled             = j.at("prefer_pulled").get<bool>();
+    cfg.save_convergence          = j.at("save_convergence").get<bool>();
+    cfg.compact_output            = j.at("compact_output").get<bool>();
+    cfg.run_id                    = j.value("run_id", "");
     return cfg;
 }
 

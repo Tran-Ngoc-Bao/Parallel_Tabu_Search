@@ -16,6 +16,7 @@ while read -r prefix ai seg strat minpull pool rand prefer_pulled workers; do
   RANDOMIZE_WORKER_HYPERPARAMS="$rand" \
   PREFER_PULLED="$prefer_pulled" \
   NUM_WORKERS="$workers" \
+  OUTPUTS_DIR="${SCRIPT_DIR}/outputs/num-workers/${strat}-factor${minpull}-np${workers}" \
   bash "${BENCHMARK_RUN}" </dev/null
 done <<'EOF'
 200 10 4 topk 6 0.03 1 1 4

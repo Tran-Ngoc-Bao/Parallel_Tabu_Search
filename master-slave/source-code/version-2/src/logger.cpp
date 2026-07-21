@@ -35,9 +35,9 @@ Logger::Logger()
     _problem = p.stem().string();
     if (_problem.empty()) throw std::runtime_error("Cannot determine problem name");
 
-    _id = random_id(8);
+    _id = cfg.run_id.empty() ? random_id(8) : cfg.run_id;
 
-    if (!cfg.disable_logging) {
+    if (!cfg.disable_logging && !cfg.compact_output) {
         fs::path csv = out / (_problem + "-" + _id + ".csv");
         std::ofstream f(csv);
         if (!f) throw std::runtime_error("Cannot create CSV: " + csv.string());
@@ -195,7 +195,9 @@ void Logger::finalize(const Solution& result,
         std::cout << p << "\n";
     };
 
-    write(out / (_problem + "-" + _id + ".json"),          run.dump());
-    write(out / (_problem + "-" + _id + "-solution.json"), sj.dump());
-    write(out / (_problem + "-" + _id + "-config.json"),   cj.dump());
+    write(out / (_problem + "-" + _id + ".json"), run.dump());
+    if (!cfg.compact_output) {
+        write(out / (_problem + "-" + _id + "-solution.json"), sj.dump());
+        write(out / (_problem + "-" + _id + "-config.json"),   cj.dump());
+    }
 }

@@ -420,6 +420,7 @@ Solution run_master(int world_size)
     struct ConvergenceRecord { double time_ms, cost_min; };
     std::vector<ConvergenceRecord> conv_records;
     auto record_convergence = [&](const Solution& sol) {
+        if (!base_cfg.save_convergence) return;
         double t_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         conv_records.push_back({t_ms, sol.cost() / 60.0});
     };
@@ -536,7 +537,7 @@ Solution run_master(int world_size)
               << init_sec << " search=" << loop_sec
               << " total=" << total_sec << "\n";
 
-    if (!base_cfg.disable_logging && !conv_records.empty()) {
+    if (base_cfg.save_convergence && !conv_records.empty()) {
         namespace fs = std::filesystem;
         fs::path out(base_cfg.outputs);
         if (!fs::is_directory(out)) fs::create_directories(out);

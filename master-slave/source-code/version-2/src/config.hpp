@@ -167,6 +167,9 @@ struct Config {
     bool            randomize_worker_hyperparams   = false;
     bool            randomize_worker_adaptive_hyperparams = false;
     bool            prefer_pulled                  = false;
+    bool            save_convergence               = false;
+    bool            compact_output                 = false;
+    std::string     run_id                         = "";
 };
 
 // Distance matrix helper

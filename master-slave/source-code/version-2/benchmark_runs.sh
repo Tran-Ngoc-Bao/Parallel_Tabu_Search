@@ -20,7 +20,7 @@ if [ ${#DATA_FILES[@]} -eq 0 ]; then
     exit 1
 fi
 
-OUTPUT_DIR="${SCRIPT_DIR}/statistics"
+OUTPUT_DIR="${OUTPUTS_DIR:-${SCRIPT_DIR}/outputs}"
 mkdir -p "${OUTPUT_DIR}"
 
 STAMP="$(TZ='Asia/Bangkok' date +%Y%m%d-%H%M%S)"
@@ -33,7 +33,7 @@ for DATA_FILE in "${DATA_FILES[@]}"; do
     DATA_FILE_NAME="$(basename "${DATA_FILE}" .txt)"
     for ((i=1; i<=RUNS; i++)); do
         TMP_LOG="$(mktemp)"
-        bash "${RUN_SCRIPT}" "${DATA_FILE}" > "${TMP_LOG}" 2>&1
+        RUN_ID="${i}" bash "${RUN_SCRIPT}" "${DATA_FILE}" > "${TMP_LOG}" 2>&1
 
         RESULT="$(sed -n 's/^Result = \([0-9.][0-9.]*\)$/\1/p' "${TMP_LOG}" | tail -n 1 | awk '{printf "%.6f", $1 / 60}')"
         TOTAL_TIME="$(sed -n 's/^Timing .* total=\([0-9.][0-9.]*\)$/\1/p' "${TMP_LOG}" | tail -n 1 | awk '{printf "%.3f", $1}')"
@@ -130,5 +130,3 @@ echo "Best result: ${BEST_RESULT}"
 echo "Combined std result: ${COMBINED_STD_RESULT}  (CV%: ${CV_PERCENT})"
 echo "Saved: ${CSV_FILE}"
 echo "Saved: ${SUMMARY_FILE}"
-
-rm -f "${SCRIPT_DIR}/outputs"/*

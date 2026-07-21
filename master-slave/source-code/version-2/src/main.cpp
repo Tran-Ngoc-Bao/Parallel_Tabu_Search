@@ -54,6 +54,9 @@ int main(int argc, char** argv)
     run_cmd->add_flag  ("--randomize-worker-hyperparams", args.run.randomize_worker_hyperparams);
     run_cmd->add_flag  ("--randomize-worker-adaptive-hyperparams", args.run.randomize_worker_adaptive_hyperparams);
     run_cmd->add_flag  ("--prefer-pulled",             args.run.prefer_pulled);
+    run_cmd->add_flag  ("--save-convergence",          args.run.save_convergence);
+    run_cmd->add_flag  ("--compact-output",            args.run.compact_output);
+    run_cmd->add_option("--run-id",                    args.run.run_id);
 
     std::map<std::string, cli::ElitePullStrategy> elite_pull_map{
         {"random",    cli::ElitePullStrategy::Random},

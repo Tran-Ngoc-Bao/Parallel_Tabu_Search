@@ -15,6 +15,9 @@ ELITE_POOL_FACTOR="${ELITE_POOL_FACTOR:-0.03}"
 RANDOMIZE_WORKER_HYPERPARAMS="${RANDOMIZE_WORKER_HYPERPARAMS:-1}"
 PREFER_PULLED="${PREFER_PULLED:-1}"
 NUM_WORKERS="${NUM_WORKERS:-10}"
+OUTPUTS_DIR="${OUTPUTS_DIR:-outputs}"
+COMPACT_OUTPUT="${COMPACT_OUTPUT:-1}"
+RUN_ID="${RUN_ID:-}"
 
 CMD=(
   mpirun --allow-run-as-root -np "${NUM_WORKERS}"
@@ -25,6 +28,7 @@ CMD=(
   --elite-pull-strategy "${ELITE_PULL_STRATEGY}"
   --min-pull-elites-per-worker-factor "${MIN_PULL_ELITES_PER_WORKER_FACTOR}"
   --elite-pool-factor "${ELITE_POOL_FACTOR}"
+  --outputs "${OUTPUTS_DIR}"
 )
 
 if [ "${RANDOMIZE_WORKER_HYPERPARAMS}" = "1" ]; then
@@ -33,6 +37,14 @@ fi
 
 if [ "${PREFER_PULLED}" = "1" ]; then
   CMD+=(--prefer-pulled)
+fi
+
+if [ "${COMPACT_OUTPUT}" = "1" ]; then
+  CMD+=(--compact-output)
+fi
+
+if [ -n "${RUN_ID}" ]; then
+  CMD+=(--run-id "${RUN_ID}")
 fi
 
 "${CMD[@]}"
