@@ -50,17 +50,26 @@ AVG_TIME="$(awk -F, 'NR>1 {sum+=$4; n++} END {if (n>0) printf "%.2f", sum/n; els
 
 BEST_INFO="$(awk -F, '
 NR>1 {
-    f=$1
-    val=$3+0
-    t=$4+0
-    if ((f in minval) == 0) { minval[f]=val; mintime[f]=t }
-    else if (val < minval[f]) { minval[f]=val; mintime[f]=t }
+    f=$1; r=$2+0; val=$3+0; t=$4+0
+    if ((f in minval) == 0) { minval[f]=val; mintime[f]=t; minrun[f]=r }
+    else if (val < minval[f]) { minval[f]=val; mintime[f]=t; minrun[f]=r }
 }
 END {
     sum=0; sumt=0; m=0
     for (f in minval) { sum += minval[f]; sumt += mintime[f]; m++ }
     if (m>0) printf "%d,%.6f,%.2f", m, sum/m, sumt/m
 }' "${CSV_FILE}")"
+
+BEST_INSTANCES="$(awk -F, '
+NR>1 {
+    f=$1; r=$2+0; val=$3+0
+    if ((f in minval) == 0) { minval[f]=val; minrun[f]=r }
+    else if (val < minval[f])  { minval[f]=val; minrun[f]=r }
+    else if (val == minval[f]) { minrun[f]=minrun[f] ", " r }
+}
+END {
+    for (f in minval) print f "\t" minrun[f]
+}' "${CSV_FILE}" | sort | awk -F'\t' '{printf "  %-20s run %s\n", $1, $2}')"
 
 FILE_COUNT="${BEST_INFO%%,*}"
 REST="${BEST_INFO#*,}"
@@ -93,6 +102,7 @@ PREFER_PULLED_VALUE="$([ "${PREFER_PULLED:-1}" = "1" ] && echo true || echo fals
     echo "best_result=${BEST_RESULT}"
     echo "file_count=${FILE_COUNT}"
     echo "best_result_total_time_sec=${BEST_TIME}"
+    printf "best_result_instances=\n%s\n" "${BEST_INSTANCES}"
     echo "csv_file=${CSV_FILE}"
 } > "${SUMMARY_FILE}"
 
