@@ -387,18 +387,17 @@ std::size_t compute_min_pull_elites_per_worker(const Config& cfg, int world_size
     constexpr std::size_t kMinClamp = 1;
     constexpr std::size_t kMaxClamp = 30;
 
-    const double scaled = cfg.min_pull_elites_per_worker_factor
-        * std::sqrt(static_cast<double>(cfg.customers_count)) / static_cast<double>(world_size - 1);
+    const double scaled = cfg.min_pull_elites_per_worker_factor * std::sqrt(static_cast<double>(cfg.customers_count));
     const std::size_t derived = static_cast<std::size_t>(std::ceil(std::max(1.0, scaled)));
     return std::clamp(derived, kMinClamp, kMaxClamp);
 }
 
 std::size_t compute_elite_pool_size(const Config& cfg, int world_size)
 {
-    constexpr std::size_t kMinClamp = 3;
-    constexpr std::size_t kMaxClamp = 100;
+    constexpr std::size_t kMinClamp = 2;
+    constexpr std::size_t kMaxClamp = 20;
 
-    const double scaled = cfg.elite_pool_factor * static_cast<double>(cfg.customers_count) * std::sqrt(static_cast<double>(world_size - 1));
+    const double scaled = cfg.elite_pool_factor * std::sqrt(static_cast<double>(cfg.customers_count)) * static_cast<double>(world_size - 1);
     const std::size_t derived = static_cast<std::size_t>(std::ceil(scaled));
     return std::clamp(derived, kMinClamp, kMaxClamp);
 }
