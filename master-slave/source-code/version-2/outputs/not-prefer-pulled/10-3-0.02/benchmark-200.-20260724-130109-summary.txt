@@ -1,0 +1,37 @@
+data_prefix=200.
+runs=5
+sleep_sec=3.0
+mpirun_np=10
+adaptive_iterations=10
+adaptive_pull_elite_segments=3
+elite_pull_strategy=random
+min_pull_elites_per_worker_factor=0.6
+elite_pool_factor=0.02
+randomize_worker_hyperparams=false
+prefer_pulled=false
+average_result=84.465279
+average_total_time_sec=16.61
+best_result=82.949317
+file_count=16
+best_result_total_time_sec=17.44
+best_result_instances=
+  200.10.1             run 3
+  200.10.2             run 1
+  200.10.3             run 3
+  200.10.4             run 2
+  200.20.1             run 1, 2, 3, 4, 5
+  200.20.2             run 1, 2, 4, 5
+  200.20.3             run 5
+  200.20.4             run 1, 2
+  200.30.1             run 2
+  200.30.2             run 2
+  200.30.3             run 1
+  200.30.4             run 5
+  200.40.1             run 3
+  200.40.2             run 5
+  200.40.3             run 2
+  200.40.4             run 3
+csv_file=/app/master-slave/source-code/version-2/outputs/not-prefer-pulled/10-3-0.02/benchmark-200.-20260724-130109.csv
+combined_std_result=0.530529
+combined_std_timing_total_sec=0.278309
+cv_percent=0.628103

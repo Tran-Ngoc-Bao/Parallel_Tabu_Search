@@ -19,28 +19,24 @@ while read -r prefix ai seg strat minpull pool rand prefer_pulled workers; do
   OUTPUTS_DIR="${SCRIPT_DIR}/outputs/not-dynamic-params/${strat}-${minpull}" \
   bash "${BENCHMARK_RUN}" </dev/null
 done <<'EOF'
-200 10 4 random 0.2 0.06 0 1 10
 200 10 4 random 0.4 0.06 0 1 10
 200 10 4 random 0.6 0.06 0 1 10
 200 10 4 random 0.8 0.06 0 1 10
 200 10 4 random 1.0 0.06 0 1 10
 200 10 4 random 1.2 0.06 0 1 10
 200 10 4 random 1.4 0.06 0 1 10
-200 10 4 topk 0.2 0.06 0 1 10
 200 10 4 topk 0.4 0.06 0 1 10
 200 10 4 topk 0.6 0.06 0 1 10
 200 10 4 topk 0.8 0.06 0 1 10
 200 10 4 topk 1.0 0.06 0 1 10
 200 10 4 topk 1.2 0.06 0 1 10
 200 10 4 topk 1.4 0.06 0 1 10
-200 10 4 rank 0.2 0.06 0 1 10
 200 10 4 rank 0.4 0.06 0 1 10
 200 10 4 rank 0.6 0.06 0 1 10
 200 10 4 rank 0.8 0.06 0 1 10
 200 10 4 rank 1.0 0.06 0 1 10
 200 10 4 rank 1.2 0.06 0 1 10
 200 10 4 rank 1.4 0.06 0 1 10
-200 10 4 pullcount 0.2 0.06 0 1 10
 200 10 4 pullcount 0.4 0.06 0 1 10
 200 10 4 pullcount 0.6 0.06 0 1 10
 200 10 4 pullcount 0.8 0.06 0 1 10

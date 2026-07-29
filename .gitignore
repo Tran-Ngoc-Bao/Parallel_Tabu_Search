@@ -3,10 +3,12 @@
 .claude/
 
 build/
-outputs/
-# statistics/
+# outputs/
+dynamic-params/
+not-dynamic-params/
+num-customers/
+num-workers/
 target/
-# convergence/
 
 master-slave/source-code/concept/asynchronous-mpi_openmp
 master-slave/source-code/concept/asynchronous-mpi
