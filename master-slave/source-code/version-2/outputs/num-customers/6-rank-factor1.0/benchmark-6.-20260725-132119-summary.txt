@@ -1,0 +1,33 @@
+data_prefix=6.
+runs=5
+sleep_sec=3.0
+mpirun_np=10
+adaptive_iterations=10
+adaptive_pull_elite_segments=4
+elite_pull_strategy=rank
+min_pull_elites_per_worker_factor=1.0
+elite_pool_factor=0.06
+randomize_worker_hyperparams=false
+prefer_pulled=true
+average_result=39.070570
+average_total_time_sec=0.03
+best_result=39.070569
+file_count=12
+best_result_total_time_sec=0.03
+best_result_instances=
+  6.10.1               run 1, 2, 3, 4, 5
+  6.10.2               run 1, 2, 3, 4, 5
+  6.10.3               run 1, 2, 3, 4, 5
+  6.10.4               run 1, 2, 3, 4, 5
+  6.20.1               run 1, 2, 3, 4, 5
+  6.20.2               run 1, 2, 3, 4, 5
+  6.20.3               run 1, 2, 3, 4, 5
+  6.20.4               run 1, 2, 3, 4, 5
+  6.5.1                run 1, 2, 3, 4, 5
+  6.5.2                run 1, 2, 3, 4, 5
+  6.5.3                run 1, 2, 3, 4, 5
+  6.5.4                run 1, 2, 3, 4, 5
+csv_file=/app/master-slave/source-code/version-2/outputs/num-customers/6-rank-factor1.0/benchmark-6.-20260725-132119.csv
+combined_std_result=-nan
+combined_std_timing_total_sec=0.000809
+cv_percent=-nan

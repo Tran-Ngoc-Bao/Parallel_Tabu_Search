@@ -4,8 +4,6 @@
 
 build/
 # outputs/
-num-customers/
-num-workers/
 target/
 
 master-slave/source-code/concept/asynchronous-mpi_openmp
