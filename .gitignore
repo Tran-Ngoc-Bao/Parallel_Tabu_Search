@@ -4,8 +4,6 @@
 
 build/
 # outputs/
-dynamic-params/
-not-dynamic-params/
 num-customers/
 num-workers/
 target/
