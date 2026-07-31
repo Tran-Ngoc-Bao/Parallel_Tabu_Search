@@ -314,7 +314,7 @@ Config build_config(const cli::RunArgs& args)
     cfg.gamma_3                   = args.gamma_3;
     cfg.gamma_4                   = args.gamma_4;
     cfg.min_pull_elites_per_worker_factor = args.min_pull_elites_per_worker_factor;
-    cfg.randomize_worker_hyperparams = args.randomize_worker_hyperparams;
+    cfg.worker_hyperparams        = args.worker_hyperparams;
     cfg.randomize_worker_adaptive_hyperparams = args.randomize_worker_adaptive_hyperparams;
     cfg.prefer_pulled             = args.prefer_pulled;
     cfg.save_convergence          = args.save_convergence;
@@ -471,7 +471,7 @@ nlohmann::json config_to_json(const Config& cfg) {
     j["gamma_3"]                   = cfg.gamma_3;
     j["gamma_4"]                   = cfg.gamma_4;
     j["min_pull_elites_per_worker_factor"] = cfg.min_pull_elites_per_worker_factor;
-    j["randomize_worker_hyperparams"]   = cfg.randomize_worker_hyperparams;
+    j["worker_hyperparams"]        = cli::to_str(cfg.worker_hyperparams);
     j["randomize_worker_adaptive_hyperparams"] = cfg.randomize_worker_adaptive_hyperparams;
     j["prefer_pulled"]             = cfg.prefer_pulled;
     j["save_convergence"]          = cfg.save_convergence;
@@ -632,7 +632,12 @@ Config build_config_from_json(const std::string& json_path)
     cfg.gamma_3                   = j.at("gamma_3").get<double>();
     cfg.gamma_4                   = j.at("gamma_4").get<double>();
     cfg.min_pull_elites_per_worker_factor = j.at("min_pull_elites_per_worker_factor").get<double>();
-    cfg.randomize_worker_hyperparams = j.at("randomize_worker_hyperparams").get<bool>();
+    {
+        auto s = j.value("worker_hyperparams", std::string("fixed"));
+        if (s == "random")      cfg.worker_hyperparams = cli::WorkerHyperparams::Random;
+        else if (s == "preset") cfg.worker_hyperparams = cli::WorkerHyperparams::Preset;
+        else                    cfg.worker_hyperparams = cli::WorkerHyperparams::Fixed;
+    }
     cfg.randomize_worker_adaptive_hyperparams = j.at("randomize_worker_adaptive_hyperparams").get<bool>();
     cfg.prefer_pulled             = j.at("prefer_pulled").get<bool>();
     cfg.save_convergence          = j.at("save_convergence").get<bool>();

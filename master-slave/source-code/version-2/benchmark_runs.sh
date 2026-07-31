@@ -82,7 +82,7 @@ ADAPTIVE_PULL_ELITE_SEGMENTS_VALUE="${ADAPTIVE_PULL_ELITE_SEGMENTS:-4}"
 ELITE_PULL_STRATEGY_VALUE="${ELITE_PULL_STRATEGY:-topk}"
 MIN_PULL_ELITES_PER_WORKER_FACTOR_VALUE="${MIN_PULL_ELITES_PER_WORKER_FACTOR:-1.0}"
 ELITE_POOL_FACTOR_VALUE="${ELITE_POOL_FACTOR:-0.06}"
-RANDOMIZE_WORKER_HYPERPARAMS_VALUE="$([ "${RANDOMIZE_WORKER_HYPERPARAMS:-0}" = "1" ] && echo true || echo false)"
+WORKER_HYPERPARAMS_VALUE="${WORKER_HYPERPARAMS:-fixed}"
 PREFER_PULLED_VALUE="$([ "${PREFER_PULLED:-1}" = "1" ] && echo true || echo false)"
 
 {
@@ -95,7 +95,7 @@ PREFER_PULLED_VALUE="$([ "${PREFER_PULLED:-1}" = "1" ] && echo true || echo fals
     echo "elite_pull_strategy=${ELITE_PULL_STRATEGY_VALUE}"
     echo "min_pull_elites_per_worker_factor=${MIN_PULL_ELITES_PER_WORKER_FACTOR_VALUE}"
     echo "elite_pool_factor=${ELITE_POOL_FACTOR_VALUE}"
-    echo "randomize_worker_hyperparams=${RANDOMIZE_WORKER_HYPERPARAMS_VALUE}"
+    echo "worker_hyperparams=${WORKER_HYPERPARAMS_VALUE}"
     echo "prefer_pulled=${PREFER_PULLED_VALUE}"
     echo "average_result=${AVG_RESULT}"
     echo "average_total_time_sec=${AVG_TIME}"

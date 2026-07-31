@@ -164,7 +164,7 @@ struct Config {
     double          gamma_3                        = 0.1;
     double          gamma_4                        = 0.3;
     double          min_pull_elites_per_worker_factor = 1.0;
-    bool            randomize_worker_hyperparams   = false;
+    cli::WorkerHyperparams worker_hyperparams      = cli::WorkerHyperparams::Fixed;
     bool            randomize_worker_adaptive_hyperparams = false;
     bool            prefer_pulled                  = false;
     bool            save_convergence               = false;

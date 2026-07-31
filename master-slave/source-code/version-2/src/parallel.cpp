@@ -57,10 +57,11 @@ std::string recv_string_impl(int source, int tag)
     return payload;
 }
 
-void send_seed(int dest, std::size_t seed)
+void send_job_start(int dest, std::size_t seed, int preset_index)
 {
     nlohmann::json j;
-    j["seed"] = seed;
+    j["seed"]         = seed;
+    j["preset_index"] = preset_index;
     send_string_impl(dest, TAG_JOB, j.dump());
 }
 
@@ -70,9 +71,30 @@ void send_stop_signal(int dest, int tag)
     MPI_Send(&size, 1, MPI_INT, dest, tag, MPI_COMM_WORLD);
 }
 
-static void randomize_worker_hyperparams(Config& cfg)
+struct WorkerPreset {
+    double tabu_size_factor;
+    double gamma_1, gamma_2, gamma_3, gamma_4;
+};
+static constexpr WorkerPreset WORKER_PRESETS[5] = {
+    {1.5,  0.5,  0.2,  0.0,  0.15},  // Best-solution
+    {0.3,  0.9,  0.3,  0.05, 0.7 },  // Fast-search
+    {1.0,  0.3,  0.2,  0.15, 0.4 },  // Diversification
+    {0.75, 0.4,  0.35, 0.1,  0.6 },  // Exploitation-heavy
+    {0.75, 0.3,  0.2,  0.1,  0.3 },  // Baseline (paper)
+};
+
+static void apply_worker_hyperparams(Config& cfg, int preset_index)
 {
-    if (!cfg.randomize_worker_hyperparams) {
+    using WH = cli::WorkerHyperparams;
+    if (cfg.worker_hyperparams == WH::Fixed) return;
+
+    if (cfg.worker_hyperparams == WH::Preset) {
+        const WorkerPreset& p = WORKER_PRESETS[preset_index % 5];
+        cfg.tabu_size_factor = p.tabu_size_factor;
+        cfg.gamma_1          = p.gamma_1;
+        cfg.gamma_2          = p.gamma_2;
+        cfg.gamma_3          = p.gamma_3;
+        cfg.gamma_4          = p.gamma_4;
         return;
     }
 
@@ -80,9 +102,7 @@ static void randomize_worker_hyperparams(Config& cfg)
                                  : static_cast<std::uint64_t>(std::random_device{}()));
 
     auto draw_scaled_step = [&](int begin_unit, int end_unit, double scale) -> double {
-        if (end_unit < begin_unit) {
-            std::swap(begin_unit, end_unit);
-        }
+        if (end_unit < begin_unit) std::swap(begin_unit, end_unit);
         return static_cast<double>(
             std::uniform_int_distribution<int>(begin_unit, end_unit)(rng)
         ) / scale;
@@ -105,7 +125,7 @@ static void randomize_worker_hyperparams(Config& cfg)
     cfg.gamma_2 = gammas[1];
     cfg.gamma_3 = gammas[2];
 
-    cfg.gamma_4 = draw_scaled_step(2, 6, 10.0);
+    cfg.gamma_4          = draw_scaled_step(2, 6, 10.0);
     cfg.tabu_size_factor = draw_scaled_step(1, 5, 4.0);
 }
 
@@ -150,10 +170,11 @@ static bool recv_solution_or_stop(int source, int tag, Solution& solution)
     return true;
 }
 
-std::size_t recv_seed(int source)
+struct JobStart { std::size_t seed; int preset_index; };
+JobStart recv_job_start(int source)
 {
     nlohmann::json j = nlohmann::json::parse(recv_string_impl(source, TAG_JOB));
-    return j.value("seed", std::size_t{0});
+    return {j.value("seed", std::size_t{0}), j.value("preset_index", -1)};
 }
 
 void send_solution(int dest, int tag, const Solution& solution)
@@ -433,6 +454,24 @@ Solution run_master(int world_size)
     std::size_t active_workers = 0;
     std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));
 
+    std::vector<int> preset_assignments(static_cast<std::size_t>(world_size - 1), -1);
+    if (base_cfg.worker_hyperparams == cli::WorkerHyperparams::Preset) {
+        const int n         = world_size - 1;
+        const int base      = n / 5;
+        const int remainder = n % 5;
+
+        // Each config appears `base` times; `remainder` randomly chosen configs get +1
+        std::vector<int> pool = {0, 1, 2, 3, 4};
+        std::shuffle(pool.begin(), pool.end(), rng);
+
+        int idx = 0;
+        for (int c = 0; c < 5; ++c)
+            for (int k = 0; k < base + (c < remainder ? 1 : 0); ++k)
+                preset_assignments[static_cast<std::size_t>(idx++)] = pool[c];
+
+        std::shuffle(preset_assignments.begin(), preset_assignments.end(), rng);
+    }
+
     auto all_running_workers_reached_min_pull = [&]() {
         for (int worker_rank = 1; worker_rank < world_size; ++worker_rank) {
             const std::size_t idx = static_cast<std::size_t>(worker_rank);
@@ -444,7 +483,8 @@ Solution run_master(int world_size)
     };
 
     auto start_worker = [&](int worker_rank) {
-        send_seed(worker_rank, next_seed++);
+        const int preset_idx = preset_assignments[static_cast<std::size_t>(worker_rank - 1)];
+        send_job_start(worker_rank, next_seed++, preset_idx);
         worker_running[static_cast<std::size_t>(worker_rank)] = true;
         ++active_workers;
     };
@@ -563,16 +603,16 @@ Solution run_master(int world_size)
     return best_solution;
 }
 
-void run_worker(int rank)
+void run_worker(int /*rank*/)
 {
     const Config base_cfg = global_config();
 
-    std::size_t seed = recv_seed(0);
+    auto [seed, preset_index] = recv_job_start(0);
 
     Config worker_cfg = base_cfg;
     worker_cfg.seed = seed;
     worker_cfg.disable_logging = true;
-    randomize_worker_hyperparams(worker_cfg);
+    apply_worker_hyperparams(worker_cfg, preset_index);
     randomize_worker_adaptive_hyperparams(worker_cfg);
     set_global_config(worker_cfg);
     Solution root = Solution::initialize();

@@ -10,6 +10,7 @@ enum class ConfigType  { Low, High };
 enum class Strategy    { Random, Cyclic, Vns, Adaptive };
 enum class ElitePullStrategy { Random, TopK, Rank, PullCount, Diverse };
 enum class DistanceType{ Manhattan, Euclidean };
+enum class WorkerHyperparams { Fixed, Random, Preset };
 
 inline const char* to_str(EnergyModel m){
     switch(m){
@@ -44,6 +45,14 @@ inline const char* to_str(ElitePullStrategy s){
 }
 inline const char* to_str(DistanceType d){
     return d == DistanceType::Manhattan ? "manhattan" : "euclidean";
+}
+inline const char* to_str(WorkerHyperparams w){
+    switch(w){
+        case WorkerHyperparams::Fixed:  return "fixed";
+        case WorkerHyperparams::Random: return "random";
+        case WorkerHyperparams::Preset: return "preset";
+    }
+    return "fixed";
 }
 
 // ---------------------------------------------------------------------
@@ -88,7 +97,7 @@ struct RunArgs {
     double        gamma_3                    = 0.1;
     double        gamma_4                    = 0.3;
     double        min_pull_elites_per_worker_factor = 1.0;
-    bool          randomize_worker_hyperparams = false;
+    WorkerHyperparams worker_hyperparams     = WorkerHyperparams::Fixed;
     bool          randomize_worker_adaptive_hyperparams = false;
     bool          prefer_pulled              = false;
     bool          save_convergence           = false;

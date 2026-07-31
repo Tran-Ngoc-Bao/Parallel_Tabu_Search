@@ -51,7 +51,14 @@ int main(int argc, char** argv)
     run_cmd->add_option("--gamma-3",                   args.run.gamma_3);
     run_cmd->add_option("--gamma-4",                   args.run.gamma_4);
     run_cmd->add_option("--min-pull-elites-per-worker-factor", args.run.min_pull_elites_per_worker_factor);
-    run_cmd->add_flag  ("--randomize-worker-hyperparams", args.run.randomize_worker_hyperparams);
+    std::map<std::string, cli::WorkerHyperparams> wh_map{
+        {"fixed",  cli::WorkerHyperparams::Fixed},
+        {"random", cli::WorkerHyperparams::Random},
+        {"preset", cli::WorkerHyperparams::Preset},
+    };
+    run_cmd->add_option("--worker-hyperparams", args.run.worker_hyperparams,
+                        "fixed|random|preset (default: fixed)")->transform(
+        CLI::CheckedTransformer(wh_map, CLI::ignore_case));
     run_cmd->add_flag  ("--randomize-worker-adaptive-hyperparams", args.run.randomize_worker_adaptive_hyperparams);
     run_cmd->add_flag  ("--prefer-pulled",             args.run.prefer_pulled);
     run_cmd->add_flag  ("--save-convergence",          args.run.save_convergence);
