@@ -267,5 +267,13 @@ pub enum Commands {
         /// Extra data to store in the output JSON
         #[arg(long, default_value_t = String::new())]
         extra: String,
+
+        /// Only write the main run JSON; skip iteration CSV, solution and config JSON files
+        #[arg(long)]
+        compact_output: bool,
+
+        /// Fixed run ID to use for output filenames (default: random 8-char alphanumeric)
+        #[arg(long, default_value_t = String::new())]
+        run_id: String,
     },
 }

@@ -38,6 +38,8 @@ if [ "${MODE}" = "pgo" ]; then
 
     echo "=== PGO build complete ==="
 else
-    cmake -S "${SCRIPT_DIR}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release
+    cmake -S "${SCRIPT_DIR}" -B "${BUILD_DIR}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DPGO_GENERATE=OFF -DPGO_USE=OFF
     cmake --build "${BUILD_DIR}"
 fi

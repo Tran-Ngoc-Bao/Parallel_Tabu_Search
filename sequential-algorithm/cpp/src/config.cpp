@@ -307,6 +307,8 @@ Config build_config(const cli::RunArgs& args)
     cfg.dry_run                   = args.dry_run;
     cfg.extra                     = args.extra;
     cfg.seed                      = args.seed;
+    cfg.compact_output            = args.compact_output;
+    cfg.run_id                    = args.run_id;
     return cfg;
 }
 
@@ -441,6 +443,8 @@ nlohmann::json config_to_json(const Config& cfg) {
     j["disable_logging"]           = cfg.disable_logging;
     j["dry_run"]                   = cfg.dry_run;
     j["extra"]                     = cfg.extra;
+    j["compact_output"]            = cfg.compact_output;
+    j["run_id"]                    = cfg.run_id;
     return j;
 }
 

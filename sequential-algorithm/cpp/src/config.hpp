@@ -157,6 +157,8 @@ struct Config {
     bool                 dry_run                   = false;
     std::string          extra                     = "";
     std::optional<uint64_t> seed                   = std::nullopt;
+    bool                 compact_output            = false;
+    std::string          run_id                    = "";
 };
 
 // Distance matrix helper

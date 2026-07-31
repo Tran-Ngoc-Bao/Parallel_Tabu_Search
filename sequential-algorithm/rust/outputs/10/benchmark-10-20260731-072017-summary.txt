@@ -1,0 +1,25 @@
+data_prefix=10
+runs=5
+sleep_sec=0.0
+average_result=50.018212
+average_total_time_sec=0.06
+best_result=50.018212
+file_count=12
+best_result_total_time_sec=0.06
+best_result_instances=
+  10.10.1              run 1, 2, 3, 4, 5
+  10.10.2              run 1, 2, 3, 4, 5
+  10.10.3              run 1, 2, 3, 4, 5
+  10.10.4              run 1, 2, 3, 4, 5
+  10.20.1              run 1, 2, 3, 4, 5
+  10.20.2              run 1, 2, 3, 4, 5
+  10.20.3              run 1, 2, 3, 4, 5
+  10.20.4              run 1, 2, 3, 4, 5
+  10.5.1               run 1, 2, 3, 4, 5
+  10.5.2               run 1, 2, 3, 4, 5
+  10.5.3               run 1, 2, 3, 4, 5
+  10.5.4               run 1, 2, 3, 4, 5
+csv_file=/app/sequential-algorithm/rust/outputs/10/benchmark-10-20260731-072017.csv
+combined_std_result=-nan
+combined_std_timing_total_sec=0.003638
+cv_percent=-nan

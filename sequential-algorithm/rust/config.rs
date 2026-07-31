@@ -376,6 +376,8 @@ pub struct SerializedConfig {
     disable_logging: bool,
     dry_run: bool,
     extra: String,
+    compact_output: bool,
+    run_id: String,
 }
 
 #[derive(Clone, Debug)]
@@ -421,6 +423,8 @@ pub struct Config {
     pub disable_logging: bool,
     pub dry_run: bool,
     pub extra: String,
+    pub compact_output: bool,
+    pub run_id: String,
 }
 
 impl From<SerializedConfig> for Config {
@@ -466,6 +470,8 @@ impl From<SerializedConfig> for Config {
             disable_logging: config.disable_logging,
             dry_run: config.dry_run,
             extra: config.extra,
+            compact_output: config.compact_output,
+            run_id: config.run_id,
         }
     }
 }
@@ -508,6 +514,8 @@ impl From<Config> for SerializedConfig {
             disable_logging: config.disable_logging,
             dry_run: config.dry_run,
             extra: config.extra,
+            compact_output: config.compact_output,
+            run_id: config.run_id,
         }
     }
 }
@@ -552,6 +560,8 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
             disable_logging,
             dry_run,
             extra,
+            compact_output,
+            run_id,
         } => {
             let trucks_count_regex = Regex::new(r"trucks_count (\d+)").unwrap();
             let drones_count_regex = Regex::new(r"drones_count (\d+)").unwrap();
@@ -670,6 +680,8 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
                 disable_logging,
                 dry_run,
                 extra,
+                compact_output,
+                run_id,
             }
         }
     }

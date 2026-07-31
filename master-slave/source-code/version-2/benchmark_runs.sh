@@ -9,11 +9,11 @@ DEFAULT_DATA_PREFIX_FROM_FILE="$(
   sed -n 's/^DEFAULT_DATA_PREFIX=\"\${DEFAULT_DATA_PREFIX:-\([^\}]\+\)}\"$/\1/p' "${RUN_SCRIPT}" | head -n 1
 )"
 DEFAULT_DATA_PREFIX="${DEFAULT_DATA_PREFIX:-${DEFAULT_DATA_PREFIX_FROM_FILE}}"
-DATA_PREFIX="${1:-${DEFAULT_DATA_PREFIX}.}"
+DATA_PREFIX="${1:-${DEFAULT_DATA_PREFIX}}"
 RUNS="${2:-5}"
 SLEEP_SEC="${3:-3.0}"
 
-DATA_FILES=( $(ls -1 "${SCRIPT_DIR}"/../../../data/soict-2025/"${DATA_PREFIX}"*.txt 2>/dev/null | sort) )
+DATA_FILES=( $(ls -1 "${SCRIPT_DIR}"/../../../data/soict-2025/"${DATA_PREFIX}."*.txt 2>/dev/null | sort) )
 
 if [ ${#DATA_FILES[@]} -eq 0 ]; then
     echo "No data files found for prefix ${DATA_PREFIX}" >&2

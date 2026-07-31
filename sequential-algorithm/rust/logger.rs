@@ -53,13 +53,17 @@ impl Logger<'_> {
                 .file_stem()
                 .and_then(|f| f.to_os_string().into_string().ok()),
         )?;
-        let id = rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(8)
-            .map(char::from)
-            .collect::<String>();
+        let id = if CONFIG.run_id.is_empty() {
+            rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(8)
+                .map(char::from)
+                .collect::<String>()
+        } else {
+            CONFIG.run_id.clone()
+        };
 
-        let mut writer = if CONFIG.disable_logging {
+        let mut writer = if CONFIG.disable_logging || CONFIG.compact_output {
             None
         } else {
             Some(File::create(outputs.join(format!("{problem}-{id}.csv")))?)
@@ -162,6 +166,10 @@ impl Logger<'_> {
         post_optimization: f64,
         post_optimization_elapsed: f64,
     ) -> Result<(), Box<dyn Error>> {
+        if CONFIG.disable_logging {
+            return Ok(());
+        }
+
         let elapsed = SystemTime::now()
             .duration_since(self._time_offset)
             .unwrap()
@@ -189,19 +197,21 @@ impl Logger<'_> {
             .as_bytes(),
         )?;
 
-        let json_path = self
-            ._outputs
-            .join(format!("{}-{}-solution.json", self._problem, self._id));
-        let mut json = File::create(&json_path)?;
-        println!("{}", json_path.display());
-        json.write_all(serde_json::to_string(&result)?.as_bytes())?;
+        if !CONFIG.compact_output {
+            let json_path = self
+                ._outputs
+                .join(format!("{}-{}-solution.json", self._problem, self._id));
+            let mut json = File::create(&json_path)?;
+            println!("{}", json_path.display());
+            json.write_all(serde_json::to_string(&result)?.as_bytes())?;
 
-        let json_path = self
-            ._outputs
-            .join(format!("{}-{}-config.json", self._problem, self._id));
-        let mut json = File::create(&json_path)?;
-        println!("{}", json_path.display());
-        json.write_all(serde_json::to_string(&serialized_config)?.as_bytes())?;
+            let json_path = self
+                ._outputs
+                .join(format!("{}-{}-config.json", self._problem, self._id));
+            let mut json = File::create(&json_path)?;
+            println!("{}", json_path.display());
+            json.write_all(serde_json::to_string(&serialized_config)?.as_bytes())?;
+        }
 
         Ok(())
     }

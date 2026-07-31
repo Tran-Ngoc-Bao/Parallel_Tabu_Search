@@ -87,6 +87,8 @@ int main(int argc, char** argv)
     run_cmd->add_flag  ("--disable-logging",       args.run.disable_logging);
     run_cmd->add_flag  ("--dry-run",               args.run.dry_run);
     run_cmd->add_option("--extra",                 args.run.extra);
+    run_cmd->add_flag  ("--compact-output",        args.run.compact_output);
+    run_cmd->add_option("--run-id",                args.run.run_id);
     std::optional<uint64_t> seed_cli;
     run_cmd->add_option("--seed", seed_cli);
 

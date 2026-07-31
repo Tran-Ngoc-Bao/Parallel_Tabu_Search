@@ -1,0 +1,25 @@
+data_prefix=6
+runs=5
+sleep_sec=0.0
+average_result=39.070570
+average_total_time_sec=0.02
+best_result=39.070569
+file_count=12
+best_result_total_time_sec=0.02
+best_result_instances=
+  6.10.1               run 1, 2, 3, 4, 5
+  6.10.2               run 1, 2, 3, 4, 5
+  6.10.3               run 1, 2, 3, 4, 5
+  6.10.4               run 1, 2, 3, 4, 5
+  6.20.1               run 1, 2, 3, 4, 5
+  6.20.2               run 1, 2, 3, 4, 5
+  6.20.3               run 1, 2, 3, 4, 5
+  6.20.4               run 1, 2, 3, 4, 5
+  6.5.1                run 1, 2, 3, 4, 5
+  6.5.2                run 1, 2, 3, 4, 5
+  6.5.3                run 1, 2, 3, 4, 5
+  6.5.4                run 1, 2, 3, 4, 5
+csv_file=/app/sequential-algorithm/rust/outputs/6/benchmark-6-20260731-072003.csv
+combined_std_result=-nan
+combined_std_timing_total_sec=0.001083
+cv_percent=-nan

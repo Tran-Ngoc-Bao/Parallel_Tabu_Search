@@ -75,11 +75,10 @@ struct WorkerPreset {
     double tabu_size_factor;
     double gamma_1, gamma_2, gamma_3, gamma_4;
 };
-static constexpr WorkerPreset WORKER_PRESETS[5] = {
-    {1.5,  0.5,  0.2,  0.0,  0.15},  // Best-solution
-    {0.3,  0.9,  0.3,  0.05, 0.7 },  // Fast-search
-    {1.0,  0.3,  0.2,  0.15, 0.4 },  // Diversification
-    {0.75, 0.4,  0.35, 0.1,  0.6 },  // Exploitation-heavy
+static constexpr WorkerPreset WORKER_PRESETS[4] = {
+    {1.25, 0.5,  0.2,  0.1,  0.2 },  // Best-solution (max tabu, max γ1-γ2 gap, stable)
+    {0.25, 0.5,  0.3,  0.1,  0.6 },  // Fast-search (min tabu, max γ4)
+    {0.75, 0.5,  0.4,  0.3,  0.5 },  // Diversification (tight gammas, no discrimination)
     {0.75, 0.3,  0.2,  0.1,  0.3 },  // Baseline (paper)
 };
 
@@ -89,7 +88,7 @@ static void apply_worker_hyperparams(Config& cfg, int preset_index)
     if (cfg.worker_hyperparams == WH::Fixed) return;
 
     if (cfg.worker_hyperparams == WH::Preset) {
-        const WorkerPreset& p = WORKER_PRESETS[preset_index % 5];
+        const WorkerPreset& p = WORKER_PRESETS[preset_index % 4];
         cfg.tabu_size_factor = p.tabu_size_factor;
         cfg.gamma_1          = p.gamma_1;
         cfg.gamma_2          = p.gamma_2;
@@ -457,15 +456,15 @@ Solution run_master(int world_size)
     std::vector<int> preset_assignments(static_cast<std::size_t>(world_size - 1), -1);
     if (base_cfg.worker_hyperparams == cli::WorkerHyperparams::Preset) {
         const int n         = world_size - 1;
-        const int base      = n / 5;
-        const int remainder = n % 5;
+        const int base      = n / 4;
+        const int remainder = n % 4;
 
         // Each config appears `base` times; `remainder` randomly chosen configs get +1
-        std::vector<int> pool = {0, 1, 2, 3, 4};
+        std::vector<int> pool = {0, 1, 2, 3};
         std::shuffle(pool.begin(), pool.end(), rng);
 
         int idx = 0;
-        for (int c = 0; c < 5; ++c)
+        for (int c = 0; c < 4; ++c)
             for (int k = 0; k < base + (c < remainder ? 1 : 0); ++k)
                 preset_assignments[static_cast<std::size_t>(idx++)] = pool[c];
 
