@@ -19,8 +19,28 @@ while read -r prefix ai seg strat minpull pool wh prefer_pulled workers; do
   OUTPUTS_DIR="${SCRIPT_DIR}/outputs/preset-hyperparams/${strat}-${minpull}" \
   bash "${BENCHMARK_RUN}" </dev/null
 done <<'EOF'
+# 200 10 4 random 0.4 0.06 preset 1 10
+# 200 10 4 random 0.6 0.06 preset 1 10
+# 200 10 4 random 0.8 0.06 preset 1 10
+# 200 10 4 random 1.0 0.06 preset 1 10
+# 200 10 4 random 1.2 0.06 preset 1 10
+# 200 10 4 random 1.4 0.06 preset 1 10
+# 200 10 4 topk 0.4 0.06 preset 1 10
+# 200 10 4 topk 0.6 0.06 preset 1 10
 200 10 4 topk 0.8 0.06 preset 1 10
 200 10 4 topk 1.0 0.06 preset 1 10
 200 10 4 topk 1.2 0.06 preset 1 10
 200 10 4 topk 1.4 0.06 preset 1 10
+# 200 10 4 rank 0.4 0.06 preset 1 10
+# 200 10 4 rank 0.6 0.06 preset 1 10
+# 200 10 4 rank 0.8 0.06 preset 1 10
+# 200 10 4 rank 1.0 0.06 preset 1 10
+# 200 10 4 rank 1.2 0.06 preset 1 10
+# 200 10 4 rank 1.4 0.06 preset 1 10
+# 200 10 4 pullcount 0.4 0.06 preset 1 10
+# 200 10 4 pullcount 0.6 0.06 preset 1 10
+# 200 10 4 pullcount 0.8 0.06 preset 1 10
+# 200 10 4 pullcount 1.0 0.06 preset 1 10
+# 200 10 4 pullcount 1.2 0.06 preset 1 10
+# 200 10 4 pullcount 1.4 0.06 preset 1 10
 EOF
