@@ -25,12 +25,12 @@ done <<'EOF'
 # 200 10 4 random 1.0 0.06 preset 1 10
 # 200 10 4 random 1.2 0.06 preset 1 10
 # 200 10 4 random 1.4 0.06 preset 1 10
-# 200 10 4 topk 0.4 0.06 preset 1 10
+200 10 4 topk 0.4 0.06 preset 1 10
 # 200 10 4 topk 0.6 0.06 preset 1 10
 200 10 4 topk 0.8 0.06 preset 1 10
-200 10 4 topk 1.0 0.06 preset 1 10
-200 10 4 topk 1.2 0.06 preset 1 10
-200 10 4 topk 1.4 0.06 preset 1 10
+# 200 10 4 topk 1.0 0.06 preset 1 10
+# 200 10 4 topk 1.2 0.06 preset 1 10
+# 200 10 4 topk 1.4 0.06 preset 1 10
 # 200 10 4 rank 0.4 0.06 preset 1 10
 # 200 10 4 rank 0.6 0.06 preset 1 10
 # 200 10 4 rank 0.8 0.06 preset 1 10

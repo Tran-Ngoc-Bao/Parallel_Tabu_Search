@@ -455,18 +455,24 @@ Solution run_master(int world_size)
 
     std::vector<int> preset_assignments(static_cast<std::size_t>(world_size - 1), -1);
     if (base_cfg.worker_hyperparams == cli::WorkerHyperparams::Preset) {
-        const int n         = world_size - 1;
-        const int base      = n / 4;
-        const int remainder = n % 4;
+        const int n          = world_size - 1;
+        const int n_baseline = n / 2;
+        const int n_special  = n - n_baseline;   // ceil(n/2)
+        const int base       = n_special / 3;
+        const int remainder  = n_special % 3;
 
-        // Each config appears `base` times; `remainder` randomly chosen configs get +1
-        std::vector<int> pool = {0, 1, 2, 3};
+        // Special configs 0-2: evenly distributed among n_special workers
+        std::vector<int> pool = {0, 1, 2};
         std::shuffle(pool.begin(), pool.end(), rng);
 
         int idx = 0;
-        for (int c = 0; c < 4; ++c)
+        for (int c = 0; c < 3; ++c)
             for (int k = 0; k < base + (c < remainder ? 1 : 0); ++k)
                 preset_assignments[static_cast<std::size_t>(idx++)] = pool[c];
+
+        // Remaining n_baseline workers get Baseline (config 3)
+        for (int k = 0; k < n_baseline; ++k)
+            preset_assignments[static_cast<std::size_t>(idx++)] = 3;
 
         std::shuffle(preset_assignments.begin(), preset_assignments.end(), rng);
     }
